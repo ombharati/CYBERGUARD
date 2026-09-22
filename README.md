@@ -70,7 +70,13 @@ CYBERGUARD/
 │   │   ├── services/
 │   │   └── main.py
 │   │
-│   └── frontend/
+│   |── frontend/
+|   ├── index.html
+|   ├── style.css
+|   ├── script.js
+|   └── assets/
+|       ├── logo.svg
+|       └── icons/
 │
 ├── detection/
 │   ├── models/
