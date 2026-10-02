@@ -117,3 +117,18 @@ pytest
 - `POST /api/scans` — Frontend compatibility endpoint (synchronous execution)
 - `GET /api/scans` — Frontend scan history endpoint
 - `GET /` — Serves the frontend user interface directly
+
+---
+
+## Documentation
+
+For in-depth technical guides, explore the dedicated documentation in [`docs/`](./docs/):
+
+- [Architecture & Pipeline](./docs/architecture.md) — Layered design, scan lifecycle, and component boundaries.
+- [System Requirements & Specifications](./docs/requirements.md) — Hardware budgets, functional requirements, and latency SLAs.
+- [API Reference](./docs/api.md) — REST endpoints, payload schemas, status codes, and cURL examples.
+- [Database & Schema](./docs/database.md) — PostgreSQL table definitions, indexing strategy, and Alembic migrations.
+- [Security & Threat Model](./docs/security.md) — Pre-flight SSRF protection, prompt injection defense, and input limits.
+- [Deployment & Operations](./docs/deployment.md) — Native tunnel, Docker Compose, and GitHub Pages hybrid setup.
+- [Developer Guide](./docs/development.md) — Local environment setup, test suites, and contribution workflow.
+
