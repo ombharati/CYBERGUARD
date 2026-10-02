@@ -1,140 +1,114 @@
 # CYBERGUARD
 
-**AI-Powered Cyber Threat, Phishing & Digital Impersonation Detection**
+**Local-First AI Cybersecurity Threat, Phishing & Impersonation Detection**
 
-`WIP` · `Cybersecurity` · `AI/ML` · `FastAPI`
+`Cybersecurity` · `AI/ML` · `FastAPI` · `Laya` · `Qwen 3` · `PostgreSQL` · `Redis`
 
-CYBERGUARD explores how AI/ML-assisted analysis and security-focused rules can be combined to identify potentially malicious or impersonated digital content.
+CYBERGUARD is a local-first cybersecurity platform combining deterministic heuristics with local neural models (**Laya** and **Qwen 3**) to deliver explainable, high-speed security assessments for URLs, emails, and suspicious content with zero mandatory cloud dependencies.
 
-<img width="2752" height="1536" alt="Design_cybersecurity_investigati…_2K_20260922210616" src="https://github.com/user-attachments/assets/dfe6e131-e6db-4bbe-8a33-c28ad7d32c8f" />
+---
 
-## What CYBERGUARD Does
-
-```text
-INPUT
-  │
-  ├── URL
-  ├── Email
-  └── Content
-       │
-       ▼
-   ANALYSIS
-       │
-       ├── Rules
-       └── ML
-       │
-       ▼
-   RISK ASSESSMENT
-       │
-       ▼
-   RESULT / REPORT
-```
-
-Planned capabilities:
-
-* Phishing detection
-* Suspicious URL analysis
-* Digital impersonation detection
-* Threat analysis
-* Risk scoring
-* Scan history
-* Security reports
-* Threat intelligence integration
-
-## Stack
-
-| Component  | Stack          |
-| ---------- | -------------- |
-| API        | FastAPI        |
-| Language   | Python         |
-| Database   | PostgreSQL     |
-| ORM        | SQLAlchemy     |
-| Validation | Pydantic       |
-| Frontend   | React          |
-| Detection  | Rules + ML     |
-| Containers | Docker         |
-| CI/CD      | GitHub Actions |
-| Testing    | Pytest         |
-
-## Structure
+## Architecture
 
 ```text
-CYBERGUARD/
-│
-├── app/
-│   ├── backend/
-│   │   ├── api/
-│   │   ├── core/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   └── main.py
-│   │
-│   |── frontend/
-|   ├── index.html
-|   ├── style.css
-|   ├── script.js
-|   └── assets/
-|       ├── logo.svg
-|       └── icons/
-│
-├── detection/
-│   ├── models/
-│   ├── rules/
-│   ├── inference/
-│   └── tests/
-│
-├── database/
-│   └── migrations/
-│
-├── infrastructure/
-│   ├── docker/
-│   └── compose/
-│
-├── docs/
-├── tests/
-│
-├── .github/
-│   └── workflows/
-│
-├── .env.example
-├── .gitignore
-├── docker-compose.yml
-└── README.md
+┌─────────────────────────────────────────────────────────────────┐
+│                    HTML / CSS / JS Frontend                     │
+│               (URL, Email, and Content Scan Modes)              │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │ HTTP / JSON
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                          FastAPI API                            │
+│           POST /api/v1/scans       GET /api/v1/scans/{id}       │
+│           POST /api/scans          GET /api/scans               │
+└─────────────────┬──────────────────────────────┬────────────────┘
+                  │ Enqueue                      │ Read/Write
+                  ▼                              ▼
+      ┌───────────────────────┐      ┌────────────────────────┐
+      │   Redis Job Queue     │      │   PostgreSQL Storage   │
+      └───────────┬───────────┘      │ (scans, scan_findings) │
+                  │ Dequeue          └────────────────────────┘
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   Background Scan Worker                        │
+│                                                                 │
+│   1. Deterministic Heuristics (URL parsing, SSRF, keywords)     │
+│   2. Laya Decision Engine (CPU - System 1 calibrated URL score) │
+│   3. Qwen Semantic Analyzer (GPU via Ollama - System 2 insight) │
+│   4. Optional External Intel (Isolated behind adapters)         │
+│   5. Explainable Risk Engine (Deterministic 0–100 score)        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-The repository is intentionally divided into application, detection, data, infrastructure, and documentation areas.
+---
 
-## Status
+## AI Responsibilities & Hardware Strategy
 
-| Area         | Status   |
-| ------------ | -------- |
-| Requirements | Planning |
-| Backend      | Planned  |
-| Frontend     | Planned  |
-| Detection    | Planned  |
-| Database     | Planned  |
-| Testing      | Planned  |
-| Docker       | Planned  |
-| CI/CD        | Planned  |
-| Deployment   | Planned  |
+Designed specifically for resource-conscious local execution (tested on RTX 3050 Laptop GPU 6 GB VRAM, 16 GB RAM):
 
-## Documentation
+| Model | Role | Runtime & Device | Purpose |
+|---|---|---|---|
+| **Laya** | URL Decision Model | **CPU** (`torch` / ModernBERT) | Fast System 1 calibrated probability classifier (~80ms). Never receives entire emails. |
+| **Qwen 3 (8B)** | Semantic Analysis | **GPU** (Ollama `qwen3:8b`) | Deep System 2 contextual reasoning, urgency assessment, and explanation generation. |
+| **Risk Engine** | Final Scoring | **Pure Deterministic Logic** | Synthesizes signals into an explainable 0–100 score. Never makes I/O or model calls. |
 
-Technical documentation will live in [`docs/`](docs/).
+---
 
-```text
-requirements
-architecture
-api
-development
-database
-security
-deployment
+## Quickstart
+
+### 1. Prerequisites
+- Python 3.11+
+- Docker & Docker Compose (for PostgreSQL and Redis)
+- Ollama with `qwen3:8b` installed (`ollama run qwen3:8b`)
+
+### 2. Start PostgreSQL & Redis
+```bash
+docker compose up -d postgres redis
 ```
 
-## Disclaimer
+### 3. Run Backend & Frontend Locally
+```bash
+# Setup virtual environment and dependencies
+uv venv .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
 
-CYBERGUARD is an educational and experimental cybersecurity project.
+# Run database migrations
+alembic upgrade head
 
-Detection results are probabilistic and should not be treated as definitive proof that content is malicious or safe.
+# Start API server (serves frontend at http://localhost:8000)
+python main.py
+```
+
+### 4. Run the Background Queue Worker (Optional for Async Queue)
+```bash
+python -m app.backend.services.worker
+```
+
+Open `http://localhost:8000` in your browser to interact with the CYBERGUARD dashboard.
+
+---
+
+## Automated Test Suite
+
+CYBERGUARD includes 36 automated tests covering API validation, deterministic URL detection, SSRF protection, email parsing, AI adapters, risk scoring, queue fallback, and live integration:
+
+```bash
+# Run unit and API tests (fast)
+pytest -k "not test_live_integration"
+
+# Run complete test suite including live model integration
+pytest
+```
+
+---
+
+## API Endpoints
+
+- `GET /health` — System status (Database, Redis, Ollama, Laya)
+- `POST /api/v1/scans` — Queue a scan asynchronously (`?sync=true` for immediate result)
+- `GET /api/v1/scans/{scan_id}` — Retrieve scan status and complete findings
+- `GET /api/v1/scans` — List scan history
+- `POST /api/scans` — Frontend compatibility endpoint (synchronous execution)
+- `GET /api/scans` — Frontend scan history endpoint
+- `GET /` — Serves the frontend user interface directly
