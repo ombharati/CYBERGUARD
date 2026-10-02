@@ -17,8 +17,8 @@ def get_redis_client() -> Optional[redis.Redis]:
             _redis_pool = redis.ConnectionPool.from_url(
                 settings.REDIS_URL,
                 decode_responses=True,
-                socket_timeout=2.0,
-                socket_connect_timeout=2.0,
+                socket_timeout=5.0,
+                socket_connect_timeout=3.0,
             )
         return redis.Redis(connection_pool=_redis_pool)
     except Exception as exc:
@@ -66,6 +66,9 @@ def pop_scan_id(timeout: int = 2) -> Optional[str]:
         item = client.brpop(settings.SCAN_QUEUE_NAME, timeout=timeout)
         if item and len(item) == 2:
             return item[1]
+        return None
+    except redis.exceptions.TimeoutError:
+        # Normal queue idle timeout
         return None
     except Exception as exc:
         logger.warning("Redis brpop error: %s", exc)
