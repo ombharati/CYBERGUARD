@@ -1,7 +1,7 @@
 """CYBERGUARD Database Connection and Session Management."""
 import logging
 from typing import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.backend.core.config import settings
 
@@ -35,7 +35,7 @@ def check_db_connection() -> bool:
     """Check if the database is reachable."""
     try:
         with engine.connect() as conn:
-            conn.execute(Base.metadata.schema and None or "SELECT 1")
+            conn.execute(text("SELECT 1"))
         return True
     except Exception as exc:
         logger.warning("Database connection check failed: %s", exc)
