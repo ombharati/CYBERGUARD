@@ -1,0 +1,68 @@
+"""Pydantic Request and Response Schemas."""
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Union
+from pydantic import BaseModel, Field, field_validator
+
+
+class ScanCreateRequest(BaseModel):
+    input_type: str = Field(..., description="'url', 'email', or 'content'")
+    data: Union[str, Dict[str, Any]] = Field(..., description="Target string or email dictionary")
+
+    @field_validator("input_type")
+    @classmethod
+    def validate_input_type(cls, v: str) -> str:
+        clean = v.strip().lower()
+        if clean not in ("url", "email", "content"):
+            raise ValueError("input_type must be one of: 'url', 'email', 'content'")
+        return clean
+
+    @field_validator("data")
+    @classmethod
+    def validate_data(cls, v: Union[str, Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
+        if isinstance(v, str):
+            clean = v.strip()
+            if not clean:
+                raise ValueError("Data cannot be empty")
+            if len(clean) > 25000:
+                raise ValueError("Input data exceeds maximum allowed length of 25,000 characters")
+            return clean
+        elif isinstance(v, dict):
+            if not v:
+                raise ValueError("Email data object cannot be empty")
+            return v
+        raise ValueError("Data must be a string or dictionary")
+
+
+class FindingResponse(BaseModel):
+    severity: str
+    title: str
+    description: str
+    category: Optional[str] = None
+
+
+class SignalResponse(BaseModel):
+    name: str
+    value: int
+
+
+class ScanResponse(BaseModel):
+    id: str
+    type: str
+    target: str
+    status: str
+    score: int = 0
+    classification: str = "Processing"
+    summary: str = ""
+    findings: List[FindingResponse] = Field(default_factory=list)
+    signals: List[SignalResponse] = Field(default_factory=list)
+    explanation: str = ""
+    timestamp: Optional[str] = None
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str = "0.1.0"
+    database: bool
+    redis: bool
+    ollama: bool
+    laya_available: bool
