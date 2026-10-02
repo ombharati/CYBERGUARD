@@ -85,7 +85,7 @@ class QwenAdapter:
             "format": "json",
             "options": {
                 "temperature": 0.1,
-                "num_predict": 350,
+                "num_predict": 200,
             },
         }
 

@@ -103,23 +103,13 @@ class ScanOrchestrator:
         intel_res = await self.threat_intel.query_url_intel(det_result.normalized_url or raw_url)
         all_findings.extend(intel_res.get("findings", []))
 
-        # 4. Optional Qwen context check (if URL has suspicious paths or parameters)
-        qwen_signals: Dict[str, Any] = {}
-        if det_result.signals.get("matched_keywords") or laya_res.get("signals", {}).get("laya_phishing_probability", 0) > 0.4:
-            qwen_res = await self.qwen.analyze_content(
-                f"Analyze URL: {raw_url}. Host: {det_result.signals.get('hostname')}",
-                context_hints=det_result.signals
-            )
-            qwen_signals = qwen_res.get("signals", {})
-            all_findings.extend(qwen_res.get("findings", []))
-
-        # 5. Risk Engine
+        # 4. Pure Risk Engine Scoring
         return RiskEngine.calculate_risk(
             input_type="URL",
             target=det_result.normalized_url or raw_url,
             detector_signals=det_result.signals,
             laya_signals=laya_res.get("signals", {}),
-            qwen_signals=qwen_signals,
+            qwen_signals={},
             external_intel_signals=intel_res.get("signals", {}),
             all_findings=all_findings,
         )
