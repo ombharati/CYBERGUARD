@@ -6,6 +6,8 @@ Architectural constraints:
 - Compact URL inputs only (never entire emails).
 - Produces structured signals, never determines the final risk score.
 - Runs strictly on CPU to protect RTX 3050 VRAM for Qwen.
+- Singleton model instance: prevents duplicate model allocations in production.
+- Allows test-level dependency injection for fast mocking.
 - Graceful degradation if unavailable.
 """
 import sys
@@ -16,6 +18,12 @@ from app.backend.core.config import settings
 from detection.url.detector import Finding
 
 logger = logging.getLogger(__name__)
+
+# Module-level singleton instance for Laya Agent to prevent duplicate model loads
+_shared_laya_agent = None
+_laya_initialized = False
+_laya_available = False
+_laya_init_error = None
 
 
 def _get_laya_url_questions() -> Dict[str, Any]:
@@ -46,11 +54,9 @@ def _get_laya_url_questions() -> Dict[str, Any]:
 class LayaAdapter:
     """Adapter for local Laya model inference on CPU."""
 
-    def __init__(self):
-        self._agent = None
-        self._initialized = False
-        self._available = False
-        self._init_error: Optional[str] = None
+    def __init__(self, agent: Optional[Any] = None, available: Optional[bool] = None):
+        self._custom_agent = agent
+        self._custom_available = available
 
     def _ensure_laya_in_sys_path(self):
         """Add Laya's virtualenv site-packages to sys.path if not already present."""
@@ -58,7 +64,6 @@ class LayaAdapter:
         if not laya_path:
             return
 
-        # Check for site-packages in lib or lib64
         candidate_site_packages = [
             laya_path / "lib64" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages",
             laya_path / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages",
@@ -72,43 +77,55 @@ class LayaAdapter:
                 break
 
     def initialize(self) -> bool:
-        """Attempt to load Laya on CPU."""
-        if self._initialized:
-            return self._available
+        """Attempt to load Laya on CPU as a singleton."""
+        global _shared_laya_agent, _laya_initialized, _laya_available, _laya_init_error
 
-        self._initialized = True
+        if self._custom_available is not None:
+            return self._custom_available
+
+        if _laya_initialized:
+            return _laya_available
+
+        _laya_initialized = True
         try:
             self._ensure_laya_in_sys_path()
             from laya import Agent
 
-            logger.info("Initializing Laya Agent on device: %s", settings.LAYA_DEVICE)
-            self._agent = Agent(
+            logger.info("Initializing singleton Laya Agent on device: %s", settings.LAYA_DEVICE)
+            _shared_laya_agent = Agent(
                 "convaiinnovations/laya",
                 device=settings.LAYA_DEVICE,
             )
-            self._available = True
-            logger.info("Laya Agent initialized successfully.")
+            _laya_available = True
+            logger.info("Laya Agent initialized successfully (singleton cached in CPU RAM).")
             return True
         except Exception as exc:
-            self._available = False
-            self._init_error = str(exc)
+            _laya_available = False
+            _laya_init_error = str(exc)
             logger.warning("Laya Agent is unavailable: %s. Scans will proceed using deterministic heuristics.", exc)
             return False
 
     def is_available(self) -> bool:
-        if not self._initialized:
+        if self._custom_available is not None:
+            return self._custom_available
+        global _laya_initialized, _laya_available
+        if not _laya_initialized:
             self.initialize()
-        return self._available
+        return _laya_available
 
     def analyze_url(self, compact_url: str) -> Dict[str, Any]:
         """
         Analyze a compact URL string with Laya.
         Returns validated structured signals and findings.
         """
-        if not self.is_available() or self._agent is None:
+        global _shared_laya_agent, _laya_init_error
+
+        agent_instance = self._custom_agent or _shared_laya_agent
+
+        if not self.is_available() or agent_instance is None:
             return {
                 "available": False,
-                "error": self._init_error or "Laya not available",
+                "error": _laya_init_error or "Laya not available",
                 "signals": {},
                 "findings": [],
             }
@@ -118,7 +135,7 @@ class LayaAdapter:
 
         try:
             questions = _get_laya_url_questions()
-            result = self._agent.predict(
+            result = agent_instance.predict(
                 {"url": clean_url},
                 questions=questions,
             )
@@ -133,7 +150,6 @@ class LayaAdapter:
             brand_score = float(brand_ans.get("noul", 0.0))
 
             suspicion_ans = answers.get("suspicion_level", {})
-            # Score is 0 to 3
             suspicion_level = float(suspicion_ans.get("score", 0.0))
 
             signals = {

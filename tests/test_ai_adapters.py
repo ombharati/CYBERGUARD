@@ -6,10 +6,7 @@ from app.backend.services.ai.qwen_adapter import QwenAdapter
 
 
 def test_laya_adapter_fallback_when_unavailable():
-    adapter = LayaAdapter()
-    adapter._initialized = True
-    adapter._available = False
-    adapter._agent = None
+    adapter = LayaAdapter(available=False)
 
     result = adapter.analyze_url("https://example.com")
     assert result["available"] is False
@@ -18,9 +15,6 @@ def test_laya_adapter_fallback_when_unavailable():
 
 
 def test_laya_adapter_successful_mock_prediction():
-    adapter = LayaAdapter()
-    adapter._initialized = True
-    adapter._available = True
     mock_agent = MagicMock()
     mock_agent.predict.return_value = {
         "answers": {
@@ -29,7 +23,7 @@ def test_laya_adapter_successful_mock_prediction():
             "suspicion_level": {"score": 2.5},
         }
     }
-    adapter._agent = mock_agent
+    adapter = LayaAdapter(agent=mock_agent, available=True)
 
     result = adapter.analyze_url("https://paypa1-security.com/login")
     assert result["available"] is True
