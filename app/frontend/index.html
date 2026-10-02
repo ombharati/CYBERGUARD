@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="CYBERGUARD - Analyze suspicious URLs, emails, and digital content."
+  />
+  <title>CYBERGUARD</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <button class="brand" data-view="analyze" type="button">
+        <span class="brand-mark">C</span>
+        <span>CYBERGUARD</span>
+      </button>
+
+      <nav class="nav">
+        <button class="nav-link active" data-view="analyze" type="button">Analyze</button>
+        <button class="nav-link" data-view="history" type="button">History</button>
+        <button class="nav-link" data-view="about" type="button">About</button>
+      </nav>
+
+      <div class="system-state">
+        <span class="state-dot"></span>
+        System ready
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ANALYZE VIEW -->
+    <section id="view-analyze" class="view active-view">
+      <div class="page-shell">
+
+        <div class="intro">
+          <div class="eyebrow">SECURITY ANALYSIS</div>
+          <h1>Investigate suspicious digital activity.</h1>
+          <p>
+            Submit a URL, email, or piece of content and CYBERGUARD will
+            analyze available security signals and explain the result.
+          </p>
+        </div>
+
+        <section class="analysis-card">
+          <div class="card-header">
+            <div>
+              <h2>New analysis</h2>
+              <p>Choose what you want CYBERGUARD to inspect.</p>
+            </div>
+
+            <span class="secure-badge">
+              <span class="mini-dot"></span>
+              Analysis workspace
+            </span>
+          </div>
+
+          <div class="mode-tabs" role="tablist">
+            <button class="mode-tab active" data-mode="url" type="button">
+              <span class="tab-icon">↗</span>
+              URL
+            </button>
+
+            <button class="mode-tab" data-mode="email" type="button">
+              <span class="tab-icon">✉</span>
+              Email
+            </button>
+
+            <button class="mode-tab" data-mode="content" type="button">
+              <span class="tab-icon">{ }</span>
+              Content
+            </button>
+          </div>
+
+          <!-- URL -->
+          <div class="mode-panel active-panel" id="panel-url">
+            <label for="url-input">URL to analyze</label>
+            <div class="input-row">
+              <input
+                id="url-input"
+                type="url"
+                placeholder="https://example.com/login"
+                autocomplete="off"
+              />
+              <button id="sample-url" class="secondary-button" type="button">
+                Example
+              </button>
+            </div>
+            <p class="field-help">
+              Paste the complete URL you want to investigate.
+            </p>
+          </div>
+
+          <!-- EMAIL -->
+          <div class="mode-panel" id="panel-email">
+            <div class="form-grid">
+              <div>
+                <label for="email-sender">Sender</label>
+                <input
+                  id="email-sender"
+                  type="text"
+                  placeholder="sender@example.com"
+                />
+              </div>
+
+              <div>
+                <label for="email-subject">Subject</label>
+                <input
+                  id="email-subject"
+                  type="text"
+                  placeholder="Your account requires verification"
+                />
+              </div>
+            </div>
+
+            <div class="field-block">
+              <label for="email-body">Email content</label>
+              <textarea
+                id="email-body"
+                rows="9"
+                placeholder="Paste the suspicious email content here..."
+              ></textarea>
+            </div>
+
+            <p class="field-help">
+              Do not submit sensitive information unless you are authorized to analyze it.
+            </p>
+          </div>
+
+          <!-- CONTENT -->
+          <div class="mode-panel" id="panel-content">
+            <label for="content-input">Content to analyze</label>
+            <textarea
+              id="content-input"
+              rows="12"
+              placeholder="Paste suspicious text, a message, or other content here..."
+            ></textarea>
+            <p class="field-help">
+              CYBERGUARD can later be extended with specialized analysis for different content types.
+            </p>
+          </div>
+
+          <div class="analysis-footer">
+            <div class="privacy-note">
+              <span class="privacy-icon">i</span>
+              <span>Only submit information you are authorized to analyze.</span>
+            </div>
+
+            <button id="analyze-button" class="primary-button" type="button">
+              <span>Analyze threat</span>
+              <span class="button-arrow">→</span>
+            </button>
+          </div>
+
+          <div id="error-box" class="error-box hidden"></div>
+        </section>
+
+        <!-- ANALYSIS PROGRESS -->
+        <section id="progress-card" class="progress-card hidden">
+          <div class="progress-header">
+            <div>
+              <div class="eyebrow">ANALYZING</div>
+              <h2>CYBERGUARD is inspecting the input.</h2>
+            </div>
+
+            <span id="progress-time" class="progress-time">0.0s</span>
+          </div>
+
+          <div class="analysis-steps">
+            <div class="analysis-step current" data-step="1">
+              <span class="step-number">01</span>
+              <div>
+                <strong>Receive input</strong>
+                <small>Preparing submitted data</small>
+              </div>
+              <span class="step-state">Working</span>
+            </div>
+
+            <div class="analysis-step" data-step="2">
+              <span class="step-number">02</span>
+              <div>
+                <strong>Inspect signals</strong>
+                <small>Checking available indicators</small>
+              </div>
+              <span class="step-state">Waiting</span>
+            </div>
+
+            <div class="analysis-step" data-step="3">
+              <span class="step-number">03</span>
+              <div>
+                <strong>Assess risk</strong>
+                <small>Combining analysis results</small>
+              </div>
+              <span class="step-state">Waiting</span>
+            </div>
+
+            <div class="analysis-step" data-step="4">
+              <span class="step-number">04</span>
+              <div>
+                <strong>Prepare report</strong>
+                <small>Generating the security summary</small>
+              </div>
+              <span class="step-state">Waiting</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- RESULT -->
+        <section id="result-card" class="result-card hidden">
+          <div class="result-top">
+            <div>
+              <div class="eyebrow">SECURITY RESULT</div>
+              <h2 id="result-title">Suspicious activity detected.</h2>
+              <p id="result-summary"></p>
+            </div>
+
+            <div id="result-badge" class="risk-badge"></div>
+          </div>
+
+          <div class="result-grid">
+            <div class="score-panel">
+              <div class="score-label">Risk score</div>
+
+              <div class="score-ring" id="score-ring">
+                <div class="score-center">
+                  <strong id="result-score">0</strong>
+                  <span>/ 100</span>
+                </div>
+              </div>
+
+              <div class="score-caption" id="score-caption">
+                Assessment generated from available signals.
+              </div>
+            </div>
+
+            <div class="result-details">
+              <div class="detail-section">
+                <div class="section-heading">
+                  <h3>Why this was flagged</h3>
+                  <span id="finding-count">0 findings</span>
+                </div>
+
+                <div id="findings-list" class="findings-list"></div>
+              </div>
+
+              <div class="detail-section">
+                <div class="section-heading">
+                  <h3>Analysis signals</h3>
+                </div>
+
+                <div id="signals-list" class="signals-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-meta">
+            <div>
+              <span>Scan ID</span>
+              <strong id="result-id">-</strong>
+            </div>
+
+            <div>
+              <span>Input type</span>
+              <strong id="result-type">-</strong>
+            </div>
+
+            <div>
+              <span>Analyzed</span>
+              <strong id="result-time">-</strong>
+            </div>
+
+            <div>
+              <span>Status</span>
+              <strong>Completed</strong>
+            </div>
+          </div>
+
+          <div class="result-actions">
+            <button id="new-analysis" class="secondary-button large-button" type="button">
+              Analyze another
+            </button>
+
+            <button id="open-report" class="primary-button large-button" type="button">
+              Open security report
+              <span class="button-arrow">→</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- REPORT -->
+        <section id="report-card" class="report-card hidden">
+          <div class="report-header">
+            <div>
+              <div class="eyebrow">SECURITY REPORT</div>
+              <h2 id="report-heading">Analysis report</h2>
+            </div>
+
+            <button id="close-report" class="secondary-button" type="button">
+              Back to result
+            </button>
+          </div>
+
+          <div class="report-summary">
+            <div class="report-status">
+              <span id="report-status-dot"></span>
+              <div>
+                <strong id="report-classification">Suspicious</strong>
+                <span id="report-status-text">Review the findings below.</span>
+              </div>
+            </div>
+
+            <div class="report-score">
+              <span>Risk score</span>
+              <strong id="report-score">0 / 100</strong>
+            </div>
+          </div>
+
+          <div class="report-content-grid">
+            <div>
+              <h3>Input under investigation</h3>
+              <div id="report-target" class="target-box"></div>
+            </div>
+
+            <div>
+              <h3>Security summary</h3>
+              <p id="report-explanation" class="report-paragraph"></p>
+            </div>
+          </div>
+
+          <div>
+            <h3>Evidence</h3>
+            <div id="report-evidence" class="report-evidence"></div>
+          </div>
+
+          <div>
+            <h3>Scan details</h3>
+            <div class="details-table">
+              <div><span>Scan ID</span><strong id="report-id">-</strong></div>
+              <div><span>Type</span><strong id="report-type">-</strong></div>
+              <div><span>Time</span><strong id="report-time">-</strong></div>
+              <div><span>Classification</span><strong id="report-classification-2">-</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- RECENT SCANS -->
+        <section class="recent-section">
+          <div class="section-heading">
+            <div>
+              <div class="eyebrow">RECENT SCANS</div>
+              <h2>Latest analysis activity</h2>
+            </div>
+
+            <button class="text-button" data-view="history" type="button">
+              View all →
+            </button>
+          </div>
+
+          <div id="recent-scans" class="recent-list"></div>
+        </section>
+
+      </div>
+    </section>
+
+    <!-- HISTORY VIEW -->
+    <section id="view-history" class="view">
+      <div class="page-shell">
+        <div class="intro compact-intro">
+          <div class="eyebrow">HISTORY</div>
+          <h1>Previous security scans.</h1>
+          <p>
+            Review past analysis results and reopen individual security reports.
+          </p>
+        </div>
+
+        <section class="history-card">
+          <div class="history-toolbar">
+            <div class="history-filters">
+              <button class="filter-button active" data-filter="all" type="button">All</button>
+              <button class="filter-button" data-filter="safe" type="button">Safe</button>
+              <button class="filter-button" data-filter="suspicious" type="button">Suspicious</button>
+              <button class="filter-button" data-filter="high" type="button">High risk</button>
+            </div>
+          </div>
+
+          <div id="history-list" class="history-list"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ABOUT VIEW -->
+    <section id="view-about" class="view">
+      <div class="page-shell">
+        <div class="intro compact-intro">
+          <div class="eyebrow">ABOUT CYBERGUARD</div>
+          <h1>A practical interface for security analysis.</h1>
+          <p>
+            CYBERGUARD is designed to bring multiple security signals into one
+            understandable analysis workflow.
+          </p>
+        </div>
+
+        <section class="about-grid">
+          <article class="about-card">
+            <div class="about-number">01</div>
+            <h2>Analyze</h2>
+            <p>
+              Submit a suspicious URL, email, or piece of digital content
+              through the analysis workspace.
+            </p>
+          </article>
+
+          <article class="about-card">
+            <div class="about-number">02</div>
+            <h2>Understand</h2>
+            <p>
+              Review the risk score, classification, findings, and supporting
+              evidence instead of receiving a black-box verdict.
+            </p>
+          </article>
+
+          <article class="about-card">
+            <div class="about-number">03</div>
+            <h2>Investigate</h2>
+            <p>
+              Open previous scans and security reports as the system grows
+              toward richer threat intelligence and impersonation analysis.
+            </p>
+          </article>
+        </section>
+
+        <section class="architecture-card">
+          <div>
+            <div class="eyebrow">DESIGNED FOR EXTENSION</div>
+            <h2>The frontend stays independent from the detection engine.</h2>
+            <p>
+              This interface is designed to consume structured analysis results
+              from an API. Detection logic can evolve without rebuilding the UI.
+            </p>
+          </div>
+
+          <div class="flow">
+            <span>User</span>
+            <b>→</b>
+            <span>Frontend</span>
+            <b>→</b>
+            <span>API</span>
+            <b>→</b>
+            <span>Detection</span>
+            <b>→</b>
+            <span>Result</span>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>CYBERGUARD</span>
+      <span>Security analysis interface</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

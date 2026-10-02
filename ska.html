@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZENVEX - CyberGuard</title>
+    <style>
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+            font-family: 'Courier New', Courier, monospace; 
+        }
+        
+        body { 
+            background-color: #000; 
+            color: #c9d1d9; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            overflow: hidden; 
+            perspective: 1000px;
+        }
+
+        /* --- TERMUX STYLE BOOT SCREEN --- */
+        #boot-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            color: #00ffcc;
+            z-index: 9999;
+            padding: 20px;
+            font-size: 13px; 
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            overflow-y: auto; 
+            transition: opacity 0.8s ease-in-out; /* Fade out bhi fast kar diya */
+        }
+
+        .fade-out { opacity: 0; pointer-events: none; }
+        .hidden { display: none !important; }
+
+        /* --- MODERN GLOWING LOADER --- */
+        .modern-loader-wrapper {
+            margin-top: 30px;
+            margin-bottom: 20px;
+            display: none; 
+            flex-direction: column;
+            align-items: flex-start;
+            width: 100%;
+            max-width: 500px;
+        }
+        
+        .loader-text {
+            color: #00ffcc;
+            font-size: 13px;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            animation: pulseText 1s infinite; /* Pulse thoda fast kiya */
+        }
+        
+        .progress-bar-container {
+            width: 100%;
+            height: 4px; 
+            background-color: rgba(0, 255, 204, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.1);
+        }
+        
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background-color: #00ffcc;
+            box-shadow: 0 0 15px #00ffcc, 0 0 30px #00ffcc; 
+            transition: width 0.1s linear;
+        }
+        
+        .percentage {
+            margin-top: 8px;
+            color: #fff;
+            font-size: 13px;
+            font-weight: bold;
+            align-self: flex-end;
+        }
+
+        @keyframes pulseText {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* --- MATRIX CANVAS --- */
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1; 
+            will-change: transform; 
+        }
+        
+        /* --- FAST & BOUNCY MACBOOK ANIMATION --- */
+        @keyframes macAppOpen {
+            0% { 
+                opacity: 0; 
+                transform: translateY(300px) scale(0) rotate(-30deg);
+                box-shadow: 0 0 0 rgba(0, 255, 204, 0);
+            }
+            50% { 
+                opacity: 1; 
+                transform: translateY(-20px) scale(1.05) rotate(5deg);
+                box-shadow: 0 25px 60px rgba(0, 255, 204, 0.2); 
+            }
+            75% { 
+                transform: translateY(10px) scale(0.97) rotate(-2deg);
+            }
+            100% { 
+                opacity: 1; 
+                transform: translateY(0) scale(1) rotate(0deg);
+                box-shadow: 0 15px 50px rgba(0, 255, 204, 0.15); 
+            }
+        }
+
+        .container { 
+            width: 100%; 
+            max-width: 550px; 
+            background: rgba(15, 20, 25, 0.4); 
+            backdrop-filter: blur(15px) saturate(150%); 
+            -webkit-backdrop-filter: blur(15px) saturate(150%);
+            padding: 40px 30px; 
+            border-radius: 20px; 
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center; 
+            z-index: 1;
+            opacity: 0; 
+            transform-origin: center bottom;
+            will-change: opacity, transform, box-shadow;
+        }
+
+        .show-container {
+            /* Speed yahan increase ki gayi hai (0.65 seconds) */
+            animation: macAppOpen 0.65s ease-out forwards;
+        }
+        
+        h1 { color: #00ffcc; font-size: 38px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 4px; text-shadow: 0 0 15px rgba(0, 255, 204, 0.6); }
+        .subtitle { color: #00e6b8; font-size: 13px; margin-bottom: 30px; letter-spacing: 2px; }
+        
+        .input-group { display: flex; flex-direction: column; gap: 15px; }
+        
+        input[type="text"] { 
+            width: 100%; padding: 18px; background: rgba(0, 0, 0, 0.4); 
+            backdrop-filter: blur(5px); border: 1px solid rgba(0, 255, 204, 0.3); 
+            color: #00ffcc; border-radius: 15px; outline: none; font-size: 16px; 
+            letter-spacing: 1px; transition: border-color 0.4s ease, box-shadow 0.4s ease, transform 0.4s ease;
+        }
+        input[type="text"]:focus { border-color: #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.4); transform: scale(1.01); }
+        input[type="text"]::placeholder { color: rgba(0, 255, 204, 0.4); }
+        
+        button { 
+            background-color: rgba(0, 255, 204, 0.1); backdrop-filter: blur(5px);
+            color: #00ffcc; padding: 18px; border: 1px solid #00ffcc; cursor: pointer; 
+            font-weight: bold; font-size: 16px; border-radius: 30px; text-transform: uppercase;
+            letter-spacing: 2px; width: 100%; transition: all 0.3s ease; 
+        }
+        button:hover { background-color: #00ffcc; color: #000; box-shadow: 0 10px 25px rgba(0, 255, 204, 0.5); transform: translateY(-3px) scale(1.02); }
+        button:active { transform: translateY(2px) scale(0.97); box-shadow: 0 2px 10px rgba(0, 255, 204, 0.4); }
+        
+        #result-card {
+            margin-top: 25px; padding: 20px; border-radius: 15px; font-size: 16px; 
+            display: none; flex-direction: column; justify-content: center; backdrop-filter: blur(10px); 
+        }
+        #result-card.show { display: flex; animation: resultPop 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        
+        @keyframes resultPop { 
+            from { opacity: 0; transform: translateY(15px) scale(0.98); } 
+            to { opacity: 1; transform: translateY(0) scale(1); } 
+        }
+        
+        .safe-bg { background: rgba(0, 255, 0, 0.15); border: 1px solid rgba(0, 255, 0, 0.5); color: #00ff00; text-shadow: 0 0 5px #00ff00; }
+        .danger-bg { background: rgba(255, 0, 0, 0.15); border: 1px solid rgba(255, 0, 0, 0.5); color: #ff0000; text-shadow: 0 0 5px #ff0000; }
+        .loading-bg { background: rgba(0, 255, 204, 0.15); border: 1px solid rgba(0, 255, 204, 0.5); color: #00ffcc; text-shadow: 0 0 5px #00ffcc; }
+        .reason-text { font-size: 13px; color: #fff; margin-top: 10px; font-weight: normal; text-shadow: none; }
+    </style>
+</head>
+<body>
+
+    <div id="boot-screen">
+        <div id="terminal-output"></div>
+        
+        <div class="modern-loader-wrapper" id="modern-loader">
+            <div class="loader-text">MOUNTING NEURAL CORES...</div>
+            <div class="progress-bar-container">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="percentage" id="progress-text">0%</div>
+        </div>
+    </div>
+
+    <canvas id="matrixCanvas"></canvas>
+
+    <div class="container" id="main-ui">
+        <h1>ZENVEX</h1>
+        <p class="subtitle">[ Neural Threat Intelligence Engine v2.0 ]</p>
+        
+        <div class="input-group">
+            <input type="text" id="targetInput" placeholder="> Enter target URL or payload here_" onkeypress="handleKeyPress(event)">
+            <button onclick="scanThreat()">Initialize Scan</button>
+        </div>
+        
+        <div id="result-card"></div>
+    </div>
+
+    <script>
+        const bootScreen = document.getElementById('boot-screen');
+        const terminalOutput = document.getElementById('terminal-output');
+        const mainUI = document.getElementById('main-ui');
+        const modernLoader = document.getElementById('modern-loader');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+
+        const termuxLines = [
+            "COMMAND_1",
+            "Get:1 https://zenvex.tech/termux-packages stable InRelease [14.0 kB]",
+            "Get:2 https://zenvex.tech/termux-packages stable/main aarch64 Packages [245 kB]",
+            "Fetched 259 kB in 1.2s (215 kB/s)",
+            "Reading package lists... Done",
+            "Building dependency tree... Done",
+            "Calculating upgrade... Done",
+            "The following packages will be upgraded:",
+            "  cyber-core neural-net zenvex-cli",
+            "3 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.",
+            "Need to get 45.2 MB of archives.",
+            "Get:1 https://zenvex.tech/ stable/main aarch64 cyber-core [15.2 MB]",
+            "Get:2 https://zenvex.tech/ stable/main aarch64 neural-net [20.0 MB]",
+            "Get:3 https://zenvex.tech/ stable/main aarch64 zenvex-cli [10.0 MB]",
+            "Fetched 45.2 MB in 2.8s (16.1 MB/s)",
+            "(Reading database ... 15032 files and directories currently installed.)",
+            "Preparing to unpack .../cyber-core_v2.0.deb ...",
+            "Unpacking cyber-core (2.0) over (1.9) ...",
+            "Setting up cyber-core (2.0) ...",
+            "Processing triggers for zenvex-engine ..."
+        ];
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        async function runBootSequence() {
+            await sleep(500); 
+
+            for (let line of termuxLines) {
+                if (line === "COMMAND_1") {
+                    terminalOutput.innerHTML += "<span style='color:#fff'>~ $</span> ";
+                    let cmd = "pkg update && pkg upgrade -y";
+                    for(let char of cmd) {
+                        terminalOutput.innerHTML += char;
+                        await sleep(30 + Math.random() * 30);
+                    }
+                    terminalOutput.innerHTML += "<br>";
+                    await sleep(300);
+                } 
+                else {
+                    for(let char of line) {
+                        terminalOutput.innerHTML += char;
+                        await sleep(2); 
+                    }
+                    terminalOutput.innerHTML += "<br>";
+                    
+                    if (line.includes("Get:")) await sleep(80);
+                    if (line.includes("Done") || line.includes("Fetched")) await sleep(150);
+                }
+                bootScreen.scrollTop = bootScreen.scrollHeight; 
+            }
+            
+            terminalOutput.innerHTML += "<br><span style='color:#fff'>~ $</span> ";
+            let cmd = "zenvex --start";
+            for(let char of cmd) {
+                terminalOutput.innerHTML += char;
+                await sleep(40 + Math.random() * 30);
+            }
+            terminalOutput.innerHTML += "<br>";
+            await sleep(300);
+
+            modernLoader.style.display = "flex";
+            bootScreen.scrollTop = bootScreen.scrollHeight;
+            
+            for(let i = 0; i <= 100; i += Math.floor(Math.random() * 7) + 2) {
+                if (i > 100) i = 100;
+                progressFill.style.width = i + "%";
+                progressText.innerText = i + "%";
+                await sleep(50 + Math.random() * 70); 
+            }
+            
+            progressFill.style.width = "100%";
+            progressText.innerText = "100%";
+            await sleep(400);
+
+            terminalOutput.innerHTML += "<br><span style='color:#00ff00; font-weight:bold;'>[OK] ZENVEX SYSTEM READY. INITIATING...</span><br>";
+            bootScreen.scrollTop = bootScreen.scrollHeight;
+            
+            await sleep(1000); 
+
+            bootScreen.classList.add('fade-out');
+            
+            await sleep(600); 
+            
+            bootScreen.classList.add('hidden');
+            mainUI.classList.add('show-container');
+        }
+
+        window.addEventListener('load', runBootSequence);
+
+        const canvas = document.getElementById('matrixCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
+        const fontSize = 16;
+        let columns = Math.floor(canvas.width / fontSize);
+        let drops = [];
+
+        for(let x = 0; x < columns; x++) {
+            drops[x] = Math.random() * -100;
+        }
+
+        window.addEventListener('resize', () => {
+            columns = Math.floor(canvas.width / fontSize);
+            drops = [];
+            for(let x = 0; x < columns; x++) {
+                drops[x] = Math.random() * -100;
+            }
+        });
+
+        let lastDrawTime = 0;
+        const fps = 30; 
+        const frameInterval = 1000 / fps;
+
+        function drawMatrix(timestamp) {
+            requestAnimationFrame(drawMatrix);
+            const deltaTime = timestamp - lastDrawTime;
+            if (deltaTime > frameInterval) {
+                lastDrawTime = timestamp - (deltaTime % frameInterval);
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#00ffcc'; 
+                ctx.font = fontSize + 'px Courier New'; 
+
+                for(let i = 0; i < drops.length; i++) {
+                    if (drops[i] > 0) {
+                        const text = letters.charAt(Math.floor(Math.random() * letters.length));
+                        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                    }
+                    if(drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    drops[i]++;
+                }
+            }
+        }
+        requestAnimationFrame(drawMatrix);
+
+        function handleKeyPress(event) {
+            if (event.key === "Enter") {
+                scanThreat();
+            }
+        }
+
+        function scanThreat() {
+            const inputVal = document.getElementById("targetInput").value.trim();
+            const resultCard = document.getElementById("result-card");
+            resultCard.className = ""; 
+            resultCard.style.display = "none";
+            void resultCard.offsetWidth;
+            
+            if(!inputVal) {
+                setTimeout(() => {
+                    resultCard.innerHTML = "⚠️ ERROR: NO TARGET SPECIFIED";
+                    resultCard.className = "show danger-bg";
+                }, 50);
+                return;
+            }
+
+            setTimeout(() => {
+                resultCard.innerHTML = "> ESTABLISHING SECURE CONNECTION...<br>> ANALYZING PACKETS...";
+                resultCard.className = "show loading-bg";
+            }, 50);
+
+            fetch('http://127.0.0.1:5000/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target: inputVal })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'danger') {
+                    resultCard.innerHTML = `
+                        <span>[!] THREAT DETECTED [!]</span>
+                        <div class="reason-text">${data.message} RISK LEVEL: CRITICAL (${data.risk_score}%)</div>
+                        <div class="reason-text" style="color: #ff7b72;">Type: ${data.type}</div>
+                    `;
+                    resultCard.className = "show danger-bg";
+                } else if (data.status === 'safe') {
+                    resultCard.innerHTML = `
+                        <span>[+] TARGET SAFE [+]</span>
+                        <div class="reason-text">${data.message}</div>
+                    `;
+                    resultCard.className = "show safe-bg";
+                } else {
+                    resultCard.innerHTML = `⚠️ ERROR: Backend connection failed.`;
+                    resultCard.className = "show danger-bg";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                resultCard.innerHTML = `⚠️ SERVER OFFLINE. START FLASK BACKEND.`;
+                resultCard.className = "show danger-bg";
+            });
+        }
+    </script>
+</body>
+</html>
