@@ -56,6 +56,11 @@ Designed specifically for resource-conscious local execution (tested on RTX 3050
 
 ## Quickstart
 
+> 📘 **Looking for full startup instructions?** Check out [**HOW_TO_RUN.md**](HOW_TO_RUN.md) for one-click server launch (`./scripts/start_server.sh`) and detailed manual instructions.
+>
+> 🌐 **Live Web App**: [ombharati.github.io/CYBERGUARD](https://ombharati.github.io/CYBERGUARD/)  
+> ⚡ **Live Server Subdomain**: [ali-caps-prostores-derby.trycloudflare.com](https://ali-caps-prostores-derby.trycloudflare.com)
+
 ### 1. Prerequisites
 - Python 3.11+
 - Docker & Docker Compose (for PostgreSQL and Redis)
