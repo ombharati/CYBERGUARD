@@ -54,4 +54,6 @@ htmlcov/
 .cline/
 
 AGENT.md
+AGENTS.md
+HOW_TO_RUN.md
 CLAUDE.md

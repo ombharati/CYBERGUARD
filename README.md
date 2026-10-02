@@ -56,7 +56,7 @@ Designed specifically for resource-conscious local execution (tested on RTX 3050
 
 ## Quickstart
 
-> 📘 **Looking for full startup instructions?** Check out [**HOW_TO_RUN.md**](HOW_TO_RUN.md) for one-click server launch (`./scripts/start_server.sh`) and detailed manual instructions.
+> 🚀 **Quick Start**: Run `./scripts/start_server.sh` to automatically launch PostgreSQL, Redis, local AI models, FastAPI, the worker queue, and the public HTTPS tunnel.
 >
 > 🌐 **Live Web App**: [ombharati.github.io/CYBERGUARD](https://ombharati.github.io/CYBERGUARD/)  
 > ⚡ **Live Server Subdomain**: [ali-caps-prostores-derby.trycloudflare.com](https://ali-caps-prostores-derby.trycloudflare.com)
