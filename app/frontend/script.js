@@ -855,14 +855,14 @@ function getSeverityClass(severity) {
 
 function getRiskColor(classification) {
   if (classification === "Safe") {
-    return "#10b981";
+    return "#147d55";
   }
 
   if (classification === "Suspicious") {
-    return "#f59e0b";
+    return "#a86b00";
   }
 
-  return "#f43f5e";
+  return "#b42318";
 }
 
 function getScoreCaption(score) {
