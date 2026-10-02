@@ -48,11 +48,12 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt pytest pytest-asyncio
 
       - name: Run Database Migrations
         env:
           DATABASE_URL: postgresql://cyberguard:cyberguard_secure_password@localhost:5432/cyberguard_db
+          PYTHONPATH: .
         run: |
           alembic upgrade head
 
@@ -60,5 +61,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://cyberguard:cyberguard_secure_password@localhost:5432/cyberguard_db
           REDIS_URL: redis://localhost:6379/0
+          PYTHONPATH: .
         run: |
           pytest -v tests/test_url_detector.py tests/test_email_detection.py tests/test_risk_engine.py tests/test_api.py tests/test_worker_and_queue.py tests/test_large_inputs.py
