@@ -14,7 +14,19 @@
   to match your FastAPI API.
 */
 
-const API_BASE_URL = "http://localhost:8000";
+function getApiBaseUrl() {
+  const custom = localStorage.getItem("cyberguard_api_url");
+  if (custom) return custom.replace(/\/+$/, "");
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return window.location.port === "8000" ? window.location.origin : "http://localhost:8000";
+  }
+  if (window.location.origin && !window.location.hostname.endsWith("github.io")) {
+    return window.location.origin;
+  }
+  return "https://ali-caps-prostores-derby.trycloudflare.com";
+}
+
+const API_BASE_URL = getApiBaseUrl();
 const CREATE_SCAN_ENDPOINT = "/api/scans";
 const HISTORY_ENDPOINT = "/api/scans";
 
