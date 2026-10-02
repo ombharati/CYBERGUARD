@@ -39,6 +39,12 @@ This is the fastest method to turn your machine into a live server accessible fr
 4. Starts the FastAPI server (`0.0.0.0:8000`) and the background queue worker.
 5. Launches a Cloudflare Tunnel container that creates an instant, secure public HTTPS subdomain (e.g. `https://*.trycloudflare.com`).
 
+### Stopping the Server:
+```bash
+./scripts/stop_server.sh        # Stops API server, worker, and Cloudflare tunnel
+./scripts/stop_server.sh --all  # Also stops PostgreSQL and Redis Docker containers
+```
+
 ---
 
 ## 3. Option B: Docker Compose Deployment
