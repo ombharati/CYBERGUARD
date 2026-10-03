@@ -81,3 +81,50 @@ def test_ssrf_critical_floor():
     )
     assert assessment.classification == "High Risk"
     assert assessment.score >= 75
+
+
+def test_official_bank_domain_is_safe_with_login_path():
+    assessment = RiskEngine.calculate_risk(
+        input_type="URL",
+        target="https://hdfc.bank.in/login/verify",
+        detector_signals={
+            "is_official_domain": True,
+            "has_sensitive_path": True,
+            "matched_keywords": ["login", "verify"],
+        },
+        laya_signals={},
+        qwen_signals={"qwen_verdict": "likely_legitimate"},
+        external_intel_signals={},
+        all_findings=[
+            Finding(severity="low", title="Verified Official Domain (HDFC Bank)", description="Legitimate bank domain"),
+        ],
+        qwen_verdict="likely_legitimate",
+    )
+    assert assessment.classification == "Safe"
+    assert assessment.score <= 15
+
+
+def test_lookalike_domain_with_sensitive_path_triggers_high_risk():
+    assessment = RiskEngine.calculate_risk(
+        input_type="URL",
+        target="https://hdfc-bank-kyc-update.com/login/verify?customer=827491",
+        detector_signals={
+            "is_lookalike_domain": True,
+            "has_sensitive_path": True,
+            "matched_keywords": ["login", "verify"],
+        },
+        laya_signals={"laya_phishing_probability": 0.9},
+        qwen_signals={"qwen_verdict": "likely_phishing"},
+        external_intel_signals={},
+        all_findings=[
+            Finding(severity="high", title="Unauthorized Brand Lookalike Domain (HDFC Bank)", description="Lookalike domain"),
+            Finding(severity="high", title="Credential Harvest Path on Lookalike Domain", description="/login on lookalike"),
+        ],
+        qwen_verdict="likely_phishing",
+        qwen_reasoning="Identity mismatch: domain is hdfc-bank-kyc-update.com instead of hdfc.bank.in.",
+        qwen_what_would_change_my_mind="If domain resolved to hdfc.bank.in.",
+    )
+    assert assessment.classification == "High Risk"
+    assert assessment.score >= 85
+    assert "Calibration Criteria" in assessment.explanation
+

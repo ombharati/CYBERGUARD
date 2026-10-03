@@ -47,7 +47,26 @@ async def test_qwen_adapter_fallback_on_timeout():
 async def test_qwen_adapter_structured_parsing():
     adapter = QwenAdapter()
     mock_json_response = {
-        "response": '{"is_social_engineering": true, "urgency_level": "high", "credential_harvesting_intent": true, "suspicion_score": 0.9, "confidence": 0.85, "key_indicators": ["account suspension", "verify password"], "threat_summary": "High risk phishing attempt"}'
+        "response": (
+            '{\n'
+            '  "reasoning": "Checked identity: claims Security Dept but sender is untrusted. Behavior: asks user to click and verify password urgently. Request: asking for password is an illegitimate request.",\n'
+            '  "observations": [\n'
+            '    {\n'
+            '      "what": "Solicitation of account password",\n'
+            '      "why_it_matters": "Real services never solicit user passwords directly.",\n'
+            '      "strength": "strong"\n'
+            '    },\n'
+            '    {\n'
+            '      "what": "High urgency language",\n'
+            '      "why_it_matters": "Pressures victim to bypass standard safety precautions.",\n'
+            '      "strength": "moderate"\n'
+            '    }\n'
+            '  ],\n'
+            '  "legitimate_explanations": ["None found for password solicitation."],\n'
+            '  "verdict": "likely_phishing",\n'
+            '  "what_would_change_my_mind": "If verified this is internal security team test."\n'
+            '}'
+        )
     }
 
     mock_resp = MagicMock()
@@ -57,11 +76,11 @@ async def test_qwen_adapter_structured_parsing():
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
         result = await adapter.analyze_content("Please verify your account password immediately.")
         assert result["available"] is True
-        assert result["signals"]["qwen_social_engineering"] is True
-        assert result["signals"]["qwen_credential_intent"] is True
-        assert result["signals"]["qwen_urgency"] == "high"
-        assert len(result["findings"]) >= 2
-        assert any("Credential Theft" in f.title for f in result["findings"])
+        assert result["signals"]["qwen_is_phishing"] is True
+        assert result["signals"]["qwen_verdict"] == "likely_phishing"
+        assert result["signals"]["qwen_strong_observations"] >= 1
+        assert len(result["findings"]) == 2
+        assert any("password" in f.title.lower() for f in result["findings"])
 
 
 @pytest.mark.asyncio
@@ -81,7 +100,26 @@ async def test_qwen_adapter_malformed_output():
 async def test_qwen_adapter_analyze_url_phishing():
     adapter = QwenAdapter()
     mock_json_response = {
-        "response": '{"is_phishing": true, "brand_impersonated": "Chase", "credential_theft": true, "suspicion_score": 0.95, "confidence": 0.92, "key_indicators": ["Fake Chase domain", "Suspicious login path"], "threat_summary": "Phishing portal imitating Chase", "technical_reasoning": "Domain spoofs Chase brand with login endpoint to harvest credentials."}'
+        "response": (
+            '{\n'
+            '  "reasoning": "Identity mismatch: URL uses chase-security-update-verify.com rather than official chase.com. Sensitive path /login on an unauthorized lookalike domain indicates high risk credential harvesting.",\n'
+            '  "observations": [\n'
+            '    {\n'
+            '      "what": "Unauthorized lookalike domain targeting Chase",\n'
+            '      "why_it_matters": "Official brand domain is chase.com.",\n'
+            '      "strength": "strong"\n'
+            '    },\n'
+            '    {\n'
+            '      "what": "Credential harvesting /login endpoint on untrusted domain",\n'
+            '      "why_it_matters": "Neutral on official domain, but on lookalike domain indicates credential theft.",\n'
+            '      "strength": "strong"\n'
+            '    }\n'
+            '  ],\n'
+            '  "legitimate_explanations": ["None found. Legitimate Chase login requires chase.com."],\n'
+            '  "verdict": "likely_phishing",\n'
+            '  "what_would_change_my_mind": "If the domain resolves to official chase.com."\n'
+            '}'
+        )
     }
 
     mock_resp = MagicMock()
@@ -91,14 +129,12 @@ async def test_qwen_adapter_analyze_url_phishing():
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
         result = await adapter.analyze_url(
             "https://chase-security-update-verify.com/login",
-            deterministic_signals={"matched_keywords": ["chase", "login"]},
+            deterministic_signals={"matched_keywords": ["chase", "login"], "is_lookalike_domain": True},
             laya_signals={"laya_phishing_probability": 0.95},
         )
         assert result["available"] is True
         assert result["signals"]["qwen_is_phishing"] is True
-        assert result["signals"]["qwen_brand_impersonation"] is True
-        assert result["signals"]["qwen_target_brand"] == "Chase"
-        assert result["signals"]["qwen_credential_intent"] is True
-        assert len(result["findings"]) >= 2
-        assert any("Phishing Link Confirmed" in f.title for f in result["findings"])
-        assert any("Credential Theft" in f.title for f in result["findings"])
+        assert result["signals"]["qwen_verdict"] == "likely_phishing"
+        assert result["signals"]["qwen_strong_observations"] == 2
+        assert len(result["findings"]) == 2
+        assert any("lookalike domain" in f.title.lower() for f in result["findings"])

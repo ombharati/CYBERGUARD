@@ -75,3 +75,36 @@ def test_shannon_entropy():
     # Random characters have higher entropy
     high = calculate_shannon_entropy("x8q9z2w1p4m7")
     assert high > low
+
+
+def test_official_indian_banks_rbi_migration():
+    # New .bank.in domain
+    sbi = analyze_url("https://sbi.bank.in/login")
+    assert sbi.signals["is_official_domain"] is True
+    assert sbi.signals["has_sensitive_path"] is True
+    assert any("Verified Official Domain" in f.title for f in sbi.findings)
+    assert not any("Lookalike" in f.title for f in sbi.findings)
+
+    # Legacy domain
+    hdfc_legacy = analyze_url("https://hdfcbank.com/login/verify")
+    assert hdfc_legacy.signals["is_official_domain"] is True
+    assert hdfc_legacy.signals["has_sensitive_path"] is True
+
+    # New HDFC .bank.in
+    hdfc_new = analyze_url("https://hdfc.bank.in/kyc")
+    assert hdfc_new.signals["is_official_domain"] is True
+
+
+def test_lookalike_bank_domain_flagged():
+    res = analyze_url("https://hdfc-bank-kyc-update.com/login/verify?customer=827491")
+    assert res.signals["is_lookalike_domain"] is True
+    assert res.signals["has_sensitive_path"] is True
+    assert any("Unauthorized Brand Lookalike Domain" in f.title for f in res.findings)
+    assert any("Credential Harvest Path on Lookalike Domain" in f.title for f in res.findings)
+
+
+def test_benign_startup_xyz_domain_neutral():
+    res = analyze_url("https://cloudtools-developer.xyz/docs")
+    assert res.signals["is_lookalike_domain"] is False
+    assert not any(f.severity == "high" for f in res.findings)
+

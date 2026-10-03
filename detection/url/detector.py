@@ -5,6 +5,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from detection.url.ssrf import validate_hostname_ssrf, is_ip_private_or_restricted
+from detection.url.brand_registry import evaluate_brand_identity, SENSITIVE_WORKFLOW_PATHS, find_claimed_brand
 
 
 # Known high-abuse or commonly abused free/cheap top-level domains
@@ -141,6 +142,13 @@ def analyze_url(raw_url: str) -> URLAnalysisResult:
     hostname = parsed.hostname or ""
     port = parsed.port
 
+    # 0. Brand Identity and Official Domain Verification
+    brand_eval = evaluate_brand_identity(hostname, path)
+    path_lower = path.lower()
+    has_sensitive_path = any(
+        sp in path_lower for sp in ("/login", "/signin", "/verify", "/kyc", "/wallet", "/confirm", "/account", "/reset-password", "/auth")
+    )
+
     signals: Dict[str, Any] = {
         "scheme": scheme,
         "hostname": hostname,
@@ -155,9 +163,36 @@ def analyze_url(raw_url: str) -> URLAnalysisResult:
         "matched_keywords": [],
         "suspicious_tld": False,
         "dangerous_file_extension": False,
+        "brand_claimed": brand_eval["brand_name"],
+        "is_official_domain": brand_eval["is_official"],
+        "is_lookalike_domain": brand_eval["is_lookalike"],
+        "has_sensitive_path": has_sensitive_path,
     }
 
     findings: List[Finding] = []
+
+    # Identity findings
+    if brand_eval["is_official"]:
+        findings.append(Finding(
+            severity="low",
+            title=f"Verified Official Domain ({brand_eval['brand_name']})",
+            description=f"Destination is the verified official domain of {brand_eval['brand_name']}. Sensitive endpoints like /login or /verify are expected.",
+            category="deterministic_url"
+        ))
+    elif brand_eval["is_lookalike"]:
+        findings.append(Finding(
+            severity="high",
+            title=f"Unauthorized Brand Lookalike Domain ({brand_eval['brand_name']})",
+            description=f"Hostname '{hostname}' claims or suggests {brand_eval['brand_name']} but does not match any official authorized domain.",
+            category="deterministic_url"
+        ))
+        if has_sensitive_path:
+            findings.append(Finding(
+                severity="high",
+                title="Credential Harvest Path on Lookalike Domain",
+                description=f"Sensitive authentication/verification path ('{path}') hosted on an unauthorized lookalike domain.",
+                category="deterministic_url"
+            ))
 
     # 1. SSRF & Reserved IP/Domain Validation
     is_ssrf, ssrf_reason = validate_hostname_ssrf(hostname)
@@ -240,32 +275,39 @@ def analyze_url(raw_url: str) -> URLAnalysisResult:
             description=f"Domain entropy ({signals['entropy']}) suggests randomly generated or algorithmically generated naming."
         ))
 
-    # 9. Suspicious TLD
+    # 9. Suspicious TLD (Overrepresented in abuse, but not standalone proof)
     tld = hostname.split(".")[-1] if "." in hostname else ""
     if tld in HIGH_RISK_TLDS:
         signals["suspicious_tld"] = True
-        findings.append(Finding(
-            severity="low",
-            title=f"Frequently Abused Top-Level Domain (.{tld})",
-            description=f"The top-level domain '.{tld}' has a statistically higher rate of disposable or abusive registrations."
-        ))
+        # Only treat as a warning finding when combined with brand lookalike, sensitive path, or raw IP
+        if brand_eval["is_lookalike"] or has_sensitive_path or signals["is_ip_address"]:
+            findings.append(Finding(
+                severity="medium" if brand_eval["is_lookalike"] else "low",
+                title=f"High-Abuse TLD Combined with Sensitive Context (.{tld})",
+                description=f"The top-level domain '.{tld}' is overrepresented in phishing and paired with a brand lookalike or sensitive path.",
+                category="deterministic_url"
+            ))
 
     # 10. Keyword & Brand Analysis in Hostname and Path
+    # On verified official domains, sensitive keywords (/login, /account) are routine and expected.
     full_target_lower = (hostname + path + query).lower()
     matched = [kw for kw in SUSPICIOUS_KEYWORDS if kw in full_target_lower]
     signals["matched_keywords"] = matched
-    if len(matched) >= 2:
-        findings.append(Finding(
-            severity="medium",
-            title="Multiple Security-Sensitive Keywords",
-            description=f"The URL contains keywords often targeted by phishing kits: {', '.join(matched[:5])}."
-        ))
-    elif len(matched) == 1 and signals["subdomain_count"] >= 2:
-        findings.append(Finding(
-            severity="low",
-            title="Security-Sensitive Keyword in Subdomain",
-            description=f"The subdomain contains an authentication-related keyword ('{matched[0]}')."
-        ))
+    if not brand_eval["is_official"]:
+        if len(matched) >= 2:
+            findings.append(Finding(
+                severity="medium",
+                title="Multiple Security-Sensitive Keywords",
+                description=f"The URL contains keywords often targeted by phishing kits: {', '.join(matched[:5])}.",
+                category="deterministic_url"
+            ))
+        elif len(matched) == 1 and signals["subdomain_count"] >= 2:
+            findings.append(Finding(
+                severity="low",
+                title="Security-Sensitive Keyword in Subdomain",
+                description=f"The subdomain contains an authentication-related keyword ('{matched[0]}').",
+                category="deterministic_url"
+            ))
 
     # 11. Dangerous Extensions
     path_lower = path.lower()

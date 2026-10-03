@@ -122,6 +122,9 @@ class ScanOrchestrator:
             all_findings=all_findings,
             qwen_summary=qwen_res.get("summary", ""),
             qwen_reasoning=qwen_res.get("reasoning", ""),
+            qwen_verdict=qwen_res.get("verdict", ""),
+            qwen_legitimate_explanations=qwen_res.get("legitimate_explanations", []),
+            qwen_what_would_change_my_mind=qwen_res.get("what_would_change_my_mind", ""),
         )
 
     async def _analyze_email_pipeline(self, raw_email_input: Any):
@@ -182,6 +185,9 @@ class ScanOrchestrator:
             all_findings=all_findings,
             qwen_summary=qwen_res.get("summary", ""),
             qwen_reasoning=qwen_res.get("reasoning", ""),
+            qwen_verdict=qwen_res.get("verdict", ""),
+            qwen_legitimate_explanations=qwen_res.get("legitimate_explanations", []),
+            qwen_what_would_change_my_mind=qwen_res.get("what_would_change_my_mind", ""),
         )
 
     async def _analyze_content_pipeline(self, raw_text: str):
@@ -238,4 +244,7 @@ class ScanOrchestrator:
             all_findings=all_findings,
             qwen_summary=qwen_res.get("summary", ""),
             qwen_reasoning=qwen_res.get("reasoning", ""),
+            qwen_verdict=qwen_res.get("verdict", ""),
+            qwen_legitimate_explanations=qwen_res.get("legitimate_explanations", []),
+            qwen_what_would_change_my_mind=qwen_res.get("what_would_change_my_mind", ""),
         )

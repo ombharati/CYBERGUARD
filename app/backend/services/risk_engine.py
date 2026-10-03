@@ -1,10 +1,10 @@
 """Deterministic and Explainable Risk Engine.
 
-Architectural constraints:
-- Deterministic, explainable, testable.
-- Combines signals from detectors, Laya, Qwen, and optional external intelligence.
-- Produces final 0–100 score and classification (Safe, Suspicious, High Risk).
-- Must NOT make HTTP requests, call models, or access the database directly.
+Reasoning-First Scoring Philosophy:
+- Sensitive paths (/login, /verify, /kyc) on verified official domains are routine and neutral.
+- Threats require evaluating IDENTITY (domain vs claimed brand), BEHAVIOR (expected context),
+  and REQUEST (illegitimate asks like OTP, PIN, gift cards, secrecy).
+- Replaces uncalibrated confidence floats with structured observation strengths and verdicts.
 """
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional
@@ -22,7 +22,7 @@ class RiskAssessment:
 
 
 class RiskEngine:
-    """Pure, deterministic scoring engine combining heterogeneous security signals."""
+    """Deterministic scoring engine combining contextual heuristics and reasoning-first AI."""
 
     @staticmethod
     def calculate_risk(
@@ -35,6 +35,9 @@ class RiskEngine:
         all_findings: List[Finding],
         qwen_summary: str = "",
         qwen_reasoning: str = "",
+        qwen_verdict: str = "",
+        qwen_legitimate_explanations: Optional[List[str]] = None,
+        qwen_what_would_change_my_mind: str = "",
     ) -> RiskAssessment:
         """
         Evaluate all collected evidence and calculate the final risk score.
@@ -44,7 +47,22 @@ class RiskEngine:
         ai_points = 0
         external_points = 0
 
+        is_official = detector_signals.get("is_official_domain", False)
+        is_lookalike = detector_signals.get("is_lookalike_domain", False)
+        has_sensitive_path = detector_signals.get("has_sensitive_path", False)
+
         # --- 1. Deterministic URL Signals ---
+        if is_lookalike:
+            heuristic_points += 35
+            if has_sensitive_path:
+                heuristic_points += 25
+        elif not is_official:
+            matched_kw_count = len(detector_signals.get("matched_keywords", []))
+            if matched_kw_count >= 2:
+                heuristic_points += 20
+            elif matched_kw_count == 1:
+                heuristic_points += 10
+
         if detector_signals.get("has_credentials"):
             heuristic_points += 30
         if detector_signals.get("dangerous_file_extension"):
@@ -55,13 +73,8 @@ class RiskEngine:
             heuristic_points += 20
         if detector_signals.get("subdomain_count", 0) >= 3:
             heuristic_points += 15
-        if detector_signals.get("suspicious_tld"):
+        if detector_signals.get("suspicious_tld") and (is_lookalike or has_sensitive_path):
             heuristic_points += 15
-        matched_kw_count = len(detector_signals.get("matched_keywords", []))
-        if matched_kw_count >= 2:
-            heuristic_points += 20
-        elif matched_kw_count == 1:
-            heuristic_points += 10
         if detector_signals.get("entropy", 0.0) > 4.2:
             heuristic_points += 15
 
@@ -70,50 +83,64 @@ class RiskEngine:
             heuristic_points += 45
 
         # --- 2. Deterministic Email Signals ---
+        if detector_signals.get("brand_mismatch") or detector_signals.get("display_name_spoofing"):
+            heuristic_points += 35
         if detector_signals.get("free_webmail_impersonation"):
             heuristic_points += 35
         if detector_signals.get("reply_to_mismatch"):
             heuristic_points += 30
         if detector_signals.get("auth_failure"):
-            heuristic_points += 25
+            heuristic_points += 30
         if detector_signals.get("credential_matches", 0) >= 1:
             heuristic_points += 25
+        if detector_signals.get("secrecy_demanded"):
+            heuristic_points += 25
+        if detector_signals.get("unusual_payment"):
+            heuristic_points += 30
+
         urgency_matches = detector_signals.get("urgency_matches", 0)
-        if urgency_matches >= 2:
+        # Urgency is only added if paired with credential ask, secrecy, or brand mismatch
+        if urgency_matches >= 1 and (
+            detector_signals.get("credential_matches", 0) >= 1
+            or detector_signals.get("brand_mismatch")
+            or detector_signals.get("secrecy_demanded")
+            or detector_signals.get("unusual_payment")
+        ):
             heuristic_points += 20
-        elif urgency_matches == 1:
-            heuristic_points += 10
 
         # --- 3. Laya AI Signals (URL System 1 Decision Engine) ---
         laya_phishing = laya_signals.get("laya_phishing_probability", 0.0)
-        if laya_phishing >= 0.75:
-            ai_points += 35
-        elif laya_phishing >= 0.45:
-            ai_points += 20
+        if not is_official:
+            if laya_phishing >= 0.75:
+                ai_points += 30
+            elif laya_phishing >= 0.45:
+                ai_points += 15
 
-        laya_brand = laya_signals.get("laya_brand_impersonation", 0.0)
-        if laya_brand >= 0.65:
-            ai_points += 20
+            laya_brand = laya_signals.get("laya_brand_impersonation", 0.0)
+            if laya_brand >= 0.65:
+                ai_points += 15
 
-        # --- 4. Qwen AI Signals (Semantic / Email / URL Deep Reasoning) ---
-        if qwen_signals.get("qwen_is_phishing"):
-            ai_points += 35
+        # --- 4. Qwen AI Signals (System 2 Reasoning-First) ---
+        verdict = qwen_verdict or qwen_signals.get("qwen_verdict", "")
+        if verdict == "likely_phishing":
+            ai_points += 45
+        elif verdict == "suspicious":
+            ai_points += 20
+        elif verdict == "likely_legitimate":
+            ai_points = max(0, ai_points - 20)
+
+        strong_obs = qwen_signals.get("qwen_strong_observations", 0)
+        mod_obs = qwen_signals.get("qwen_moderate_observations", 0)
+        if strong_obs >= 1:
+            ai_points += 15
+        if mod_obs >= 1:
+            ai_points += 10
+
+        # Legacy backward-compatibility flags if present
         if qwen_signals.get("qwen_credential_intent"):
-            ai_points += 30
-        if qwen_signals.get("qwen_brand_impersonation"):
             ai_points += 20
         if qwen_signals.get("qwen_social_engineering"):
-            ai_points += 20
-        qwen_urgency = qwen_signals.get("qwen_urgency", "none")
-        if qwen_urgency == "high":
             ai_points += 15
-        elif qwen_urgency == "medium":
-            ai_points += 10
-        qwen_suspicion = qwen_signals.get("qwen_suspicion_score", 0.0)
-        if qwen_suspicion >= 0.70:
-            ai_points += 20
-        elif qwen_suspicion >= 0.40:
-            ai_points += 10
 
         # --- 5. External Threat Intel Signals ---
         if external_intel_signals.get("virustotal_malicious", 0) > 0:
@@ -122,69 +149,48 @@ class RiskEngine:
             external_points += 40
 
         # --- Caps and Normalization ---
-        # Cap heuristic contribution at 65, AI at 75 (allowing consensus to establish High Risk), external at 40
         capped_heuristics = min(heuristic_points, 65)
         capped_ai = min(ai_points, 75)
         capped_external = min(external_points, 40)
 
         raw_sum = capped_heuristics + capped_ai + capped_external
 
-        # Base noise floor for analyzed inputs
         if raw_sum == 0:
             final_score = 10
         else:
             final_score = min(98, max(12, raw_sum))
 
-        # Check for critical compound severity rules
-        # 1. Multi-model AI consensus: Laya + Qwen in agreement on phishing/credential harvesting
-        ai_consensus_phishing = (
-            (laya_phishing >= 0.70 and (qwen_signals.get("qwen_is_phishing") or qwen_signals.get("qwen_credential_intent") or qwen_suspicion >= 0.70))
-            or (qwen_signals.get("qwen_credential_intent") and qwen_signals.get("qwen_social_engineering"))
-        )
-
-        # 2. AI + Deterministic compound triggers
-        compound_heuristic_phishing = (
-            (laya_phishing >= 0.75 and (laya_brand >= 0.65 or matched_kw_count >= 1 or detector_signals.get("suspicious_tld")))
-            or (qwen_signals.get("qwen_credential_intent") and (matched_kw_count >= 1 or detector_signals.get("free_webmail_impersonation") or detector_signals.get("reply_to_mismatch")))
-            or (qwen_signals.get("qwen_is_phishing") and (matched_kw_count >= 1 or laya_brand >= 0.65))
-        )
-
-        # 3. High standalone certainty
-        standalone_high_certainty = (
-            laya_phishing >= 0.88
-            or qwen_suspicion >= 0.90
-        )
-
-        # Apply floors
-        if ai_consensus_phishing:
-            final_score = max(final_score, 88)
-        elif compound_heuristic_phishing:
-            final_score = max(final_score, 82)
-        elif standalone_high_certainty:
-            final_score = max(final_score, 78)
-
-        # 4. Critical infrastructure overrides (SSRF, malicious downloads, external intel)
+        # --- 6. Calibrated Verdict-Driven Rules ---
+        # Critical malicious infrastructure overrides
         is_critical_infra = (
             detector_signals.get("is_ssrf_risk")
             or detector_signals.get("dangerous_file_extension")
             or external_points >= 40
         )
+
         if is_critical_infra:
+            final_score = max(final_score, 88)
+        elif is_official and not is_critical_infra:
+            # Verified official brand domain with routine navigation -> Safe
+            final_score = min(final_score, 12)
+        elif verdict == "likely_phishing":
+            # Multi-question reasoning confirmed phishing -> High Risk
+            final_score = max(final_score, 88)
+        elif verdict == "likely_legitimate" and not is_lookalike:
+            # Multi-question reasoning confirmed legitimate -> Safe
+            final_score = min(final_score, 18)
+        elif verdict == "suspicious":
+            # Exactly one question problematic -> Suspicious
+            final_score = min(74, max(50, final_score))
+        elif is_lookalike and has_sensitive_path:
+            # Lookalike domain with login/KYC path
             final_score = max(final_score, 85)
+        elif is_lookalike:
+            final_score = max(final_score, 75)
+        elif laya_phishing >= 0.88:
+            final_score = max(final_score, 80)
 
-        # 5. Benign safeguard: if zero heuristics triggered and all AIs report low suspicion, keep Safe
-        is_benign = (
-            heuristic_points == 0
-            and laya_phishing < 0.25
-            and qwen_suspicion < 0.25
-            and not qwen_signals.get("qwen_is_phishing")
-            and not qwen_signals.get("qwen_credential_intent")
-            and not qwen_signals.get("qwen_social_engineering")
-        )
-        if is_benign:
-            final_score = min(final_score, 15)
-
-        # Classification mapping (matching frontend thresholds)
+        # Classification mapping
         if final_score >= 75:
             classification = "High Risk"
         elif final_score >= 45:
@@ -214,9 +220,17 @@ class RiskEngine:
             {"name": "Reputation signals", "value": reputation_val},
         ]
 
-        # Generate human-readable summary and explanation
+        # Generate reasoning-first summary and explanation
         summary, explanation = RiskEngine._build_narratives(
-            input_type, classification, final_score, unique_findings, qwen_summary, qwen_reasoning
+            input_type=input_type,
+            classification=classification,
+            score=final_score,
+            findings=unique_findings,
+            qwen_summary=qwen_summary,
+            qwen_reasoning=qwen_reasoning,
+            qwen_verdict=verdict,
+            qwen_legitimate_explanations=qwen_legitimate_explanations or [],
+            qwen_what_would_change_my_mind=qwen_what_would_change_my_mind,
         )
 
         return RiskAssessment(
@@ -236,49 +250,50 @@ class RiskEngine:
         findings: List[Finding],
         qwen_summary: str = "",
         qwen_reasoning: str = "",
+        qwen_verdict: str = "",
+        qwen_legitimate_explanations: Optional[List[str]] = None,
+        qwen_what_would_change_my_mind: str = "",
     ) -> Tuple[str, str]:
         high_findings = [f.title for f in findings if f.severity == "high"]
         med_findings = [f.title for f in findings if f.severity == "medium"]
 
+        # Base summary
         if classification == "High Risk":
             if qwen_summary:
-                summary = f"Critical security threat: {qwen_summary}"
+                summary = f"Critical threat identified: {qwen_summary}"
             else:
-                summary = (
-                    f"Critical security threats detected in this {input_type}. "
-                    f"Primary indicators include: {', '.join((high_findings + med_findings)[:2])}."
-                )
-
-            if qwen_reasoning:
-                explanation = f"{qwen_reasoning} Automated multi-engine inspection confirmed severe threat indicators. Do NOT input credentials or interact with this resource."
-            else:
-                explanation = (
-                    "The automated multi-engine inspection identified verified deceptive patterns or malicious mechanisms. "
-                    "Immediate defensive precautions are advised. Do not input credentials, execute downloads, or reply."
-                )
+                summary = f"Critical security threats detected in this {input_type}. Primary indicators: {', '.join((high_findings + med_findings)[:2])}."
         elif classification == "Suspicious":
             if qwen_summary:
-                summary = f"Suspicious activity detected: {qwen_summary}"
+                summary = f"Suspicious activity: {qwen_summary}"
             else:
-                summary = (
-                    f"The analyzed {input_type} exhibits anomalous patterns warranting caution. "
-                    f"Notable warning signs: {', '.join((high_findings + med_findings)[:2]) or 'Elevated structural anomalies'}."
-                )
-
-            if qwen_reasoning:
-                explanation = f"{qwen_reasoning} Multiple security indicators were triggered during heuristic and neural analysis."
-            else:
-                explanation = (
-                    "Multiple security indicators were triggered during heuristic and neural analysis. "
-                    "While not confirmed actively destructive, the input deviates from verified benign patterns."
-                )
+                summary = f"Anomalous patterns warranting caution in this {input_type}. Notable indicators: {', '.join((high_findings + med_findings)[:2]) or 'Contextual inconsistency'}."
         else:
-            summary = (
-                f"No major malicious indicators were detected for this {input_type} in baseline analysis."
-            )
-            explanation = (
-                "First-pass deterministic rules and local neural models found no overt indicators of phishing, "
-                "deception, or active exploitation. Routine security vigilance is still advised."
-            )
+            if qwen_summary:
+                summary = qwen_summary
+            else:
+                summary = f"No major malicious indicators detected for this {input_type}. Verified as likely legitimate."
 
+        # Reasoning-first detailed explanation
+        parts = []
+        if qwen_reasoning:
+            parts.append(f"Analysis Reasoning: {qwen_reasoning}")
+
+        if qwen_what_would_change_my_mind:
+            parts.append(f"Calibration Criteria: {qwen_what_would_change_my_mind}")
+
+        if qwen_legitimate_explanations:
+            valid_expls = [e for e in qwen_legitimate_explanations if e and "none found" not in e.lower()]
+            if valid_expls:
+                parts.append(f"Benign Alternative: {'; '.join(valid_expls[:2])}")
+
+        if not parts:
+            if classification == "High Risk":
+                parts.append("Multi-engine inspection confirmed deceptive patterns or malicious mechanisms. Do NOT input credentials or interact with this resource.")
+            elif classification == "Suspicious":
+                parts.append("Elevated risk signals detected. While not definitively hostile, caution is advised before proceeding.")
+            else:
+                parts.append("Identity, behavior, and request criteria evaluated as clean. Standard security vigilance is recommended.")
+
+        explanation = " ".join(parts)
         return summary, explanation
