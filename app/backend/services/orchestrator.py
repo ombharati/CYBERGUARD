@@ -88,30 +88,40 @@ class ScanOrchestrator:
             return scan
 
     async def _analyze_url_pipeline(self, raw_url: str):
-        """Pipeline for standalone URL analysis."""
+        """Pipeline for standalone URL analysis (Heuristics → Laya → Qwen → Intel → Risk Engine)."""
         all_findings: List[Finding] = []
 
         # 1. Deterministic URL Analysis
         det_result = analyze_url(raw_url)
         all_findings.extend(det_result.findings)
 
-        # 2. Laya Neural Decision (URL only, CPU)
+        # 2. Laya Neural Decision (URL only, CPU System 1)
         laya_res = self.laya.analyze_url(det_result.normalized_url or raw_url)
         all_findings.extend(laya_res.get("findings", []))
 
-        # 3. Optional External Threat Intel
+        # 3. Qwen Deep Semantic Analysis (GPU System 2)
+        qwen_res = await self.qwen.analyze_url(
+            det_result.normalized_url or raw_url,
+            deterministic_signals=det_result.signals,
+            laya_signals=laya_res.get("signals", {}),
+        )
+        all_findings.extend(qwen_res.get("findings", []))
+
+        # 4. Optional External Threat Intel
         intel_res = await self.threat_intel.query_url_intel(det_result.normalized_url or raw_url)
         all_findings.extend(intel_res.get("findings", []))
 
-        # 4. Pure Risk Engine Scoring
+        # 5. Pure Risk Engine Scoring
         return RiskEngine.calculate_risk(
             input_type="URL",
             target=det_result.normalized_url or raw_url,
             detector_signals=det_result.signals,
             laya_signals=laya_res.get("signals", {}),
-            qwen_signals={},
+            qwen_signals=qwen_res.get("signals", {}),
             external_intel_signals=intel_res.get("signals", {}),
             all_findings=all_findings,
+            qwen_summary=qwen_res.get("summary", ""),
+            qwen_reasoning=qwen_res.get("reasoning", ""),
         )
 
     async def _analyze_email_pipeline(self, raw_email_input: Any):
@@ -170,6 +180,8 @@ class ScanOrchestrator:
             qwen_signals=qwen_res.get("signals", {}),
             external_intel_signals={},
             all_findings=all_findings,
+            qwen_summary=qwen_res.get("summary", ""),
+            qwen_reasoning=qwen_res.get("reasoning", ""),
         )
 
     async def _analyze_content_pipeline(self, raw_text: str):
@@ -224,4 +236,6 @@ class ScanOrchestrator:
             qwen_signals=qwen_res.get("signals", {}),
             external_intel_signals={},
             all_findings=all_findings,
+            qwen_summary=qwen_res.get("summary", ""),
+            qwen_reasoning=qwen_res.get("reasoning", ""),
         )

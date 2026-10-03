@@ -37,7 +37,7 @@ def is_redis_available() -> bool:
         return False
 
 
-def enqueue_scan_id(scan_id: str) -> bool:
+def enqueue_scan_id(scan_id: str, queue_name: Optional[str] = None) -> bool:
     """
     Push a scan ID into the background processing queue.
     Returns True if successfully queued, False if Redis is unavailable.
@@ -45,16 +45,17 @@ def enqueue_scan_id(scan_id: str) -> bool:
     client = get_redis_client()
     if not client:
         return False
+    target_queue = queue_name or settings.SCAN_QUEUE_NAME
     try:
-        client.lpush(settings.SCAN_QUEUE_NAME, scan_id)
-        logger.info("Enqueued scan %s to Redis queue '%s'", scan_id, settings.SCAN_QUEUE_NAME)
+        client.lpush(target_queue, scan_id)
+        logger.info("Enqueued scan %s to Redis queue '%s'", scan_id, target_queue)
         return True
     except Exception as exc:
         logger.warning("Failed to enqueue scan %s to Redis: %s", scan_id, exc)
         return False
 
 
-def pop_scan_id(timeout: int = 2) -> Optional[str]:
+def pop_scan_id(timeout: int = 2, queue_name: Optional[str] = None) -> Optional[str]:
     """
     Pop the next scan ID from the queue with blocking timeout.
     Returns None if queue is empty or Redis is unavailable.
@@ -62,8 +63,9 @@ def pop_scan_id(timeout: int = 2) -> Optional[str]:
     client = get_redis_client()
     if not client:
         return None
+    target_queue = queue_name or settings.SCAN_QUEUE_NAME
     try:
-        item = client.brpop(settings.SCAN_QUEUE_NAME, timeout=timeout)
+        item = client.brpop(target_queue, timeout=timeout)
         if item and len(item) == 2:
             return item[1]
         return None

@@ -35,10 +35,11 @@ async def test_live_postgres_and_redis_lifecycle():
         assert persisted.risk_score == scan.risk_score
         assert len(persisted.findings) == len(scan.findings)
 
-        # Test Redis enqueue and dequeue
-        enqueued = enqueue_scan_id(scan.id)
+        # Test Redis enqueue and dequeue with isolated test queue to avoid worker race
+        test_q = "cyberguard:test_lifecycle_queue"
+        enqueued = enqueue_scan_id(scan.id, queue_name=test_q)
         assert enqueued is True
-        popped_id = pop_scan_id(timeout=1)
+        popped_id = pop_scan_id(timeout=2, queue_name=test_q)
         assert popped_id == scan.id
 
     finally:

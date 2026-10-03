@@ -75,3 +75,30 @@ async def test_qwen_adapter_malformed_output():
         result = await adapter.analyze_content("Hello")
         assert result["available"] is False
         assert "Malformed model response" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_qwen_adapter_analyze_url_phishing():
+    adapter = QwenAdapter()
+    mock_json_response = {
+        "response": '{"is_phishing": true, "brand_impersonated": "Chase", "credential_theft": true, "suspicion_score": 0.95, "confidence": 0.92, "key_indicators": ["Fake Chase domain", "Suspicious login path"], "threat_summary": "Phishing portal imitating Chase", "technical_reasoning": "Domain spoofs Chase brand with login endpoint to harvest credentials."}'
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = mock_json_response
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
+        result = await adapter.analyze_url(
+            "https://chase-security-update-verify.com/login",
+            deterministic_signals={"matched_keywords": ["chase", "login"]},
+            laya_signals={"laya_phishing_probability": 0.95},
+        )
+        assert result["available"] is True
+        assert result["signals"]["qwen_is_phishing"] is True
+        assert result["signals"]["qwen_brand_impersonation"] is True
+        assert result["signals"]["qwen_target_brand"] == "Chase"
+        assert result["signals"]["qwen_credential_intent"] is True
+        assert len(result["findings"]) >= 2
+        assert any("Phishing Link Confirmed" in f.title for f in result["findings"])
+        assert any("Credential Theft" in f.title for f in result["findings"])
