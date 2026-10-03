@@ -114,3 +114,65 @@ def test_frontend_static_serving():
     res = client.get("/")
     assert res.status_code == 200
     assert "CYBERGUARD" in res.text or "<!DOCTYPE html>" in res.text
+
+
+def test_scan_report_download_and_preview():
+    db = TestingSessionLocal()
+    scan_id = generate_scan_id()
+    sample_narrative = (
+        "1. What was analyzed\n"
+        "Input type: URL\n"
+        "Target inspected: https://example.com/test\n\n"
+        "2. Verdict\n"
+        "Verdict: Safe (Risk Score: 15/100)\n\n"
+        "3. Key findings\n"
+        "No suspicious indicators detected.\n\n"
+        "4. Why this verdict\n"
+        "Clean identity and verified behavior.\n\n"
+        "5. What was checked\n"
+        "- Deterministic heuristics\n\n"
+        "6. What was not checked\n"
+        "- None\n\n"
+        "7. Recommendation\n"
+        "Safe to use."
+    )
+    scan = Scan(
+        id=scan_id,
+        input_type="url",
+        target="https://example.com/test",
+        raw_input="https://example.com/test",
+        status="completed",
+        risk_score=15,
+        classification="Safe",
+        summary="Clean inspection",
+        explanation="No threats found.",
+        signals=[],
+        report_text=sample_narrative,
+        report_generated_by="template",
+    )
+    db.add(scan)
+    db.commit()
+    db.close()
+
+    # 1. Test GET /api/v1/scans/{scan_id} includes report_text
+    detail_res = client.get(f"/api/v1/scans/{scan_id}")
+    assert detail_res.status_code == 200
+    data = detail_res.json()
+    assert data["report_text"] == sample_narrative
+    assert data["report_generated_by"] == "template"
+
+    # 2. Test GET /api/v1/scans/{scan_id}/report download as text/plain
+    report_res = client.get(f"/api/v1/scans/{scan_id}/report")
+    assert report_res.status_code == 200
+    assert "text/plain" in report_res.headers["content-type"]
+    assert f'filename="cyberguard-report-{scan_id}.txt"' in report_res.headers["content-disposition"]
+    assert "1. What was analyzed" in report_res.text
+    assert "2. Verdict" in report_res.text
+    assert "Safe to use." in report_res.text
+
+    # 3. Test GET /api/scans/{scan_id}/report (frontend compat endpoint)
+    compat_report_res = client.get(f"/api/scans/{scan_id}/report")
+    assert compat_report_res.status_code == 200
+    assert "text/plain" in compat_report_res.headers["content-type"]
+    assert f'filename="cyberguard-report-{scan_id}.txt"' in compat_report_res.headers["content-disposition"]
+

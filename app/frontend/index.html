@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta
     name="description"
     content="CYBERGUARD - Analyze suspicious URLs, emails, and digital content."
@@ -218,7 +218,17 @@
               <p id="result-summary"></p>
             </div>
 
-            <div id="result-badge" class="risk-badge"></div>
+            <div class="result-top-actions">
+              <div id="result-badge" class="risk-badge"></div>
+              <button id="export-report-btn" class="export-report-button hidden" type="button" title="Export one-page narrative report as .txt">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Export Report</span>
+              </button>
+            </div>
           </div>
 
           <div class="result-grid">
@@ -299,9 +309,30 @@
               <h2 id="report-heading">Analysis report</h2>
             </div>
 
-            <button id="close-report" class="secondary-button" type="button">
-              Back to result
-            </button>
+            <div class="report-header-actions">
+              <button id="close-report" class="secondary-button" type="button">
+                Back to result
+              </button>
+              <button id="export-report-from-card" class="export-report-button" type="button" title="Download one-page report as .txt">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Export Report</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="narrative-report-card" class="narrative-card hidden">
+            <div class="narrative-card-header">
+              <div>
+                <div class="eyebrow">EXECUTIVE SUMMARY</div>
+                <h3 class="narrative-title">One-Page Narrative Report</h3>
+              </div>
+              <span id="narrative-generated-by" class="provider-badge">AI Generated</span>
+            </div>
+            <pre id="narrative-report-body" class="narrative-body"></pre>
           </div>
 
           <div class="report-summary">

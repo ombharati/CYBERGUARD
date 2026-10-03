@@ -235,23 +235,20 @@ $("#analyze-button").addEventListener("click", async () => {
 
   $("#analyze-button").disabled = true;
 
+  const progressCtrl = startAnalysisProgress();
   try {
     let result;
     if (USE_MOCK_DATA) {
       result = await runMockAnalysis(payload);
     } else {
       try {
-        // show progress while hitting real API
-        const apiPromise = runApiAnalysis(payload);
-        const progressPromise = runAnalysisProgress();
-        result = await apiPromise;
-        await progressPromise;
+        result = await runApiAnalysis(payload);
       } catch (apiErr) {
         console.warn("API failed, falling back to mock:", apiErr);
-        // fallback to mock so UI stays impressive offline
         result = await runMockAnalysis(payload);
       }
     }
+    progressCtrl.finish();
 
     currentResult = result;
 
@@ -300,10 +297,8 @@ async function refreshHistoryFromApi(){
 ----------------------------- */
 
 async function runMockAnalysis(payload) {
-  await runAnalysisProgress();
-
+  await wait(800);
   let result;
-
   if (payload.type === "url") {
     result = createMockUrlResult(payload);
   } else if (payload.type === "email") {
@@ -311,44 +306,63 @@ async function runMockAnalysis(payload) {
   } else {
     result = createMockContentResult(payload);
   }
-
   return result;
 }
 
-async function runAnalysisProgress() {
+function startAnalysisProgress() {
   const steps = $$(".analysis-step");
   const started = performance.now();
+  let finished = false;
 
+  // Initialize all steps
+  steps.forEach((step, idx) => {
+    step.classList.remove("current");
+    const stateText = step.querySelector(".step-state");
+    if (stateText) stateText.textContent = idx === 0 ? "Working" : "Waiting";
+  });
+  if (steps[0]) steps[0].classList.add("current");
   $("#progress-time").textContent = "0.0s";
 
-  for (let index = 0; index < steps.length; index += 1) {
-    steps.forEach((step, stepIndex) => {
-      step.classList.toggle(
-        "current",
-        stepIndex === index
-      );
-
-      const stateText = step.querySelector(".step-state");
-
-      if (stepIndex < index) {
-        stateText.textContent = "Done";
-      } else if (stepIndex === index) {
-        stateText.textContent = "Working";
-      } else {
-        stateText.textContent = "Waiting";
-      }
-    });
-
-    await wait(550);
-
+  const timer = setInterval(() => {
+    if (finished) return;
     const elapsed = (performance.now() - started) / 1000;
     $("#progress-time").textContent = `${elapsed.toFixed(1)}s`;
-  }
 
-  steps.forEach((step) => {
-    step.classList.remove("current");
-    step.querySelector(".step-state").textContent = "Done";
-  });
+    // Realistically advance steps according to backend execution stages:
+    // 0-0.5s: Deterministic Analysis
+    // 0.5-2.0s: Laya Neural URL Model
+    // 2.0s+: Qwen Semantic Reasoning
+    let activeIdx = 0;
+    if (elapsed > 2.0) {
+      activeIdx = 2; // Qwen reasoning
+    } else if (elapsed > 0.5) {
+      activeIdx = 1; // Laya neural model
+    }
+
+    steps.forEach((step, stepIndex) => {
+      step.classList.toggle("current", stepIndex === activeIdx);
+      const stateText = step.querySelector(".step-state");
+      if (stateText) {
+        if (stepIndex < activeIdx) stateText.textContent = "Done";
+        else if (stepIndex === activeIdx) stateText.textContent = "Working";
+        else stateText.textContent = "Waiting";
+      }
+    });
+  }, 100);
+
+  return {
+    finish: () => {
+      finished = true;
+      clearInterval(timer);
+      steps.forEach((step) => {
+        step.classList.remove("current");
+        const stateText = step.querySelector(".step-state");
+        if (stateText) stateText.textContent = "Done";
+      });
+      const elapsed = (performance.now() - started) / 1000;
+      $("#progress-time").textContent = `${elapsed.toFixed(1)}s`;
+    }
+  };
 }
 
 /* -----------------------------
@@ -688,27 +702,37 @@ function buildResult({
 ----------------------------- */
 
 async function runApiAnalysis(payload) {
-  const response = await fetch(
-    `${API_BASE_URL}${CREATE_SCAN_ENDPOINT}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        input_type: payload.type,
-        data: payload.value
-      })
-    }
-  );
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-  if (!response.ok) {
-    throw new Error(
-      `Backend returned HTTP ${response.status}.`
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}${CREATE_SCAN_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          input_type: payload.type,
+          data: payload.value
+        }),
+        signal: controller.signal
+      }
     );
-  }
 
-  const data = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        `Backend returned HTTP ${response.status}.`
+      );
+    }
+
+    const data = await response.json();
+    return data;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
   /*
     Expected normalized response:
@@ -802,10 +826,55 @@ function showResult(result) {
   $("#result-type").textContent = result.type;
   $("#result-time").textContent = formatDate(result.timestamp);
 
+  currentResult = result;
+
+  const exportBtn = $("#export-report-btn");
+  if (exportBtn) {
+    if (result.status === "completed" || result.score !== undefined) {
+      exportBtn.classList.remove("hidden");
+    } else {
+      exportBtn.classList.add("hidden");
+    }
+  }
+
+  // Poll for background Qwen narrative report upgrade if initial was template
+  if (result.report_generated_by === "template" && result.id) {
+    pollNarrativeReportUpgrade(result.id);
+  }
+
   window.scrollTo({
     top: $("#result-card").offsetTop - 90,
     behavior: "smooth"
   });
+}
+
+function pollNarrativeReportUpgrade(scanId) {
+  if (!scanId || USE_MOCK_DATA) return;
+  let attempts = 0;
+  const interval = setInterval(async () => {
+    attempts++;
+    if (attempts > 12 || !currentResult || currentResult.id !== scanId) {
+      clearInterval(interval);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/scans/${encodeURIComponent(scanId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.report_generated_by === "qwen" && data.report_text) {
+          clearInterval(interval);
+          if (currentResult && currentResult.id === scanId) {
+            currentResult.report_text = data.report_text;
+            currentResult.report_generated_by = "qwen";
+            const narrativeBody = $("#narrative-report-body");
+            const genTag = $("#narrative-generated-by");
+            if (narrativeBody) narrativeBody.textContent = data.report_text.trim();
+            if (genTag) genTag.textContent = "Qwen AI Narrative";
+          }
+        }
+      }
+    } catch {}
+  }, 3000);
 }
 
 function renderFinding(finding) {
@@ -952,7 +1021,64 @@ function renderReport(result) {
         `
       )
       .join("");
+
+  // Executive Narrative Preview
+  const narrativeCard = $("#narrative-report-card");
+  const narrativeBody = $("#narrative-report-body");
+  if (narrativeCard && narrativeBody) {
+    if (result.report_text && result.report_text.trim()) {
+      show(narrativeCard);
+      narrativeBody.textContent = result.report_text.trim();
+      const genTag = $("#narrative-generated-by");
+      if (genTag) {
+        genTag.textContent = result.report_generated_by === "qwen" ? "Qwen AI Narrative" : "Deterministic Template";
+      }
+    } else {
+      hide(narrativeCard);
+    }
+  }
 }
+
+/* -----------------------------
+   REPORT EXPORT
+----------------------------- */
+
+function downloadScanReport(scanId) {
+  if (!scanId && !currentResult) return;
+  if (USE_MOCK_DATA && currentResult && currentResult.report_text) {
+    const blob = new Blob([currentResult.report_text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cyberguard-report-${scanId || "scan"}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return;
+  }
+  const downloadUrl = `${API_BASE_URL}/api/scans/${encodeURIComponent(scanId)}/report`;
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = `cyberguard-report-${scanId}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+$("#export-report-btn")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (currentResult && currentResult.id) {
+    downloadScanReport(currentResult.id);
+  }
+});
+
+$("#export-report-from-card")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (currentResult && currentResult.id) {
+    downloadScanReport(currentResult.id);
+  }
+});
 
 /* -----------------------------
    NEW ANALYSIS

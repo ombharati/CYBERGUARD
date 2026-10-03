@@ -1,4 +1,4 @@
-"""CYBERGUARD FastAPI Application."""
+import asyncio
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -39,6 +39,13 @@ async def lifespan(app: FastAPI):
         laya.initialize()
     except Exception as exc:
         logger.warning("Laya warmup failed: %s", exc)
+
+    # Pre-warm Qwen in GPU VRAM (keep_alive: 24h) to avoid first-scan latency
+    try:
+        qwen = QwenAdapter()
+        asyncio.create_task(qwen.warmup())
+    except Exception as exc:
+        logger.warning("Qwen warmup schedule failed: %s", exc)
 
     yield
     logger.info("Shutting down CYBERGUARD backend...")

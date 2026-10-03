@@ -19,6 +19,7 @@ class RiskAssessment:
     explanation: str
     signals: List[Dict[str, Any]]
     findings: List[Finding] = field(default_factory=list)
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 class RiskEngine:
@@ -38,6 +39,7 @@ class RiskEngine:
         qwen_verdict: str = "",
         qwen_legitimate_explanations: Optional[List[str]] = None,
         qwen_what_would_change_my_mind: str = "",
+        meta: Optional[Dict[str, Any]] = None,
     ) -> RiskAssessment:
         """
         Evaluate all collected evidence and calculate the final risk score.
@@ -240,6 +242,7 @@ class RiskEngine:
             explanation=explanation,
             signals=signals_payload,
             findings=unique_findings,
+            meta=meta or {},
         )
 
     @staticmethod

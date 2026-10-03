@@ -38,6 +38,8 @@ class Scan(Base):
     summary = Column(Text, nullable=True)
     explanation = Column(Text, nullable=True)
     signals = Column(JSON, nullable=True, default=list)
+    report_text = Column(Text, nullable=True)
+    report_generated_by = Column(String(20), nullable=True)  # "qwen" or "template"
     
     # Error tracking & retries
     error_message = Column(Text, nullable=True)
@@ -82,6 +84,8 @@ class Scan(Base):
             "signals": self.signals or [],
             "explanation": self.explanation or "",
             "status": self.status,
+            "report_text": self.report_text or "",
+            "report_generated_by": self.report_generated_by or "",
             "timestamp": self.created_at.isoformat() if self.created_at else None,
         }
 

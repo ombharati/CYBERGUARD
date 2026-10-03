@@ -3,7 +3,7 @@
 Routes handle HTTP concerns only.
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
 from sqlalchemy.orm import Session
 from app.backend.core.database import get_db
 from app.backend.schemas.scan import ScanCreateRequest, ScanResponse
@@ -57,6 +57,47 @@ def get_scan(
             detail=f"Scan with ID '{scan_id}' not found.",
         )
     return scan.to_dict()
+
+
+@router.get(
+    "/{scan_id}/report",
+    summary="Download one-page narrative security report as plain text",
+)
+def get_scan_report(
+    scan_id: str,
+    db: Session = Depends(get_db),
+):
+    scan = _scan_service.get_scan(db=db, scan_id=scan_id)
+    if not scan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan with ID '{scan_id}' not found.",
+        )
+
+    report_content = scan.report_text
+    if not report_content:
+        if scan.status == "completed":
+            from app.backend.services.ai.qwen_adapter import build_deterministic_report
+            report_content = build_deterministic_report(
+                input_type=scan.input_type,
+                target=scan.target,
+                risk_score=scan.risk_score or 0,
+                classification=scan.classification or "Safe",
+                findings=scan.findings,
+                providers_used=["Deterministic Heuristics Engine"],
+                providers_not_used=[],
+            )
+        else:
+            report_content = f"CYBERGUARD Security Analysis for Scan ID: {scan_id}\nStatus: {scan.status.capitalize()}\nReport is not yet ready."
+
+    filename = f"cyberguard-report-{scan_id}.txt"
+    return Response(
+        content=report_content,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
+    )
 
 
 @router.get(

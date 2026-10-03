@@ -56,6 +56,8 @@ class ScanResponse(BaseModel):
     findings: List[FindingResponse] = Field(default_factory=list)
     signals: List[SignalResponse] = Field(default_factory=list)
     explanation: str = ""
+    report_text: Optional[str] = None
+    report_generated_by: Optional[str] = None
     timestamp: Optional[str] = None
 
 

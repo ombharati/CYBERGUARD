@@ -89,6 +89,9 @@ class LayaAdapter:
         _laya_initialized = True
         try:
             self._ensure_laya_in_sys_path()
+            import os
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
             from laya import Agent
 
             logger.info("Initializing singleton Laya Agent on device: %s", settings.LAYA_DEVICE)
@@ -120,12 +123,19 @@ class LayaAdapter:
         """
         global _shared_laya_agent, _laya_init_error
 
-        agent_instance = self._custom_agent or _shared_laya_agent
-
-        if not self.is_available() or agent_instance is None:
+        if not self.is_available():
             return {
                 "available": False,
                 "error": _laya_init_error or "Laya not available",
+                "signals": {},
+                "findings": [],
+            }
+
+        agent_instance = self._custom_agent or _shared_laya_agent
+        if agent_instance is None:
+            return {
+                "available": False,
+                "error": "Laya agent instance is None",
                 "signals": {},
                 "findings": [],
             }

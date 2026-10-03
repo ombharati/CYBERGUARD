@@ -57,3 +57,8 @@ AGENT.md
 AGENTS.md
 HOW_TO_RUN.md
 CLAUDE.md
+
+# Temporary test outputs & local media
+test_out.json
+docs/*.png
+

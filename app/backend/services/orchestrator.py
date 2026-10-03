@@ -4,6 +4,7 @@ Coordinates:
 Input Validation → Deterministic Detection → Laya (URL System 1) → Qwen (Semantic System 2)
 → Optional Threat Intel → Risk Engine → Database Persistence.
 """
+import asyncio
 import logging
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
@@ -12,7 +13,7 @@ from detection.url.detector import analyze_url, Finding
 from detection.email.parser import parse_email, extract_urls_from_text
 from detection.email.heuristics import analyze_email_heuristics
 from app.backend.services.ai.laya_adapter import LayaAdapter
-from app.backend.services.ai.qwen_adapter import QwenAdapter
+from app.backend.services.ai.qwen_adapter import QwenAdapter, build_deterministic_report
 from app.backend.services.external_intel import ExternalThreatIntelAdapter
 from app.backend.services.risk_engine import RiskEngine
 
@@ -58,10 +59,22 @@ class ScanOrchestrator:
             scan.summary = assessment.summary
             scan.explanation = assessment.explanation
             scan.signals = assessment.signals
+
+            # Instant deterministic 7-section report baseline
+            meta = getattr(assessment, "meta", {})
+            scan.report_text = build_deterministic_report(
+                input_type=scan.input_type,
+                target=scan.target,
+                risk_score=scan.risk_score or 0,
+                classification=scan.classification or "Safe",
+                findings=assessment.findings,
+                providers_used=meta.get("providers_used", []),
+                providers_not_used=meta.get("providers_not_used", []),
+            )
+            scan.report_generated_by = "template"
             scan.status = "completed"
 
             # Persist findings
-            # Clear any previous findings (e.g. from retries)
             db.query(ScanFinding).filter(ScanFinding.scan_id == scan.id).delete()
             for finding in assessment.findings:
                 db_finding = ScanFinding(
@@ -75,7 +88,21 @@ class ScanOrchestrator:
 
             db.commit()
             db.refresh(scan)
-            logger.info("Scan %s completed with score %s (%s)", scan.id, scan.risk_score, scan.classification)
+            logger.info("Scan %s completed with score %s (%s) [Initial report: %s]", scan.id, scan.risk_score, scan.classification, scan.report_generated_by)
+
+            # Trigger narrative report upgrade asynchronously in the background
+            asyncio.create_task(
+                self._background_generate_report(
+                    scan_id=scan.id,
+                    input_type=scan.input_type,
+                    target=scan.target,
+                    risk_score=scan.risk_score or 0,
+                    classification=scan.classification or "Safe",
+                    findings=assessment.findings,
+                    meta=meta,
+                )
+            )
+
             return scan
 
         except Exception as exc:
@@ -86,6 +113,44 @@ class ScanOrchestrator:
             db.commit()
             db.refresh(scan)
             return scan
+
+    async def _background_generate_report(
+        self,
+        scan_id: str,
+        input_type: str,
+        target: str,
+        risk_score: int,
+        classification: str,
+        findings: List[Finding],
+        meta: Dict[str, Any],
+    ) -> None:
+        """Asynchronously upgrades the scan report with Qwen's plain-English narrative without blocking scan finalization."""
+        try:
+            report_res = await self.qwen.generate_narrative_report(
+                input_type=input_type,
+                target=target,
+                risk_score=risk_score,
+                classification=classification,
+                findings=findings,
+                detector_signals=meta.get("detector_signals", {}),
+                laya_signals=meta.get("laya_signals", {}),
+                qwen_signals=meta.get("qwen_signals", {}),
+                providers_used=meta.get("providers_used", []),
+                providers_not_used=meta.get("providers_not_used", []),
+            )
+            report_text = report_res.get("report_text")
+            generated_by = report_res.get("generated_by", "template")
+
+            from app.backend.core.database import SessionLocal
+            with SessionLocal() as db:
+                db_scan = db.query(Scan).filter(Scan.id == scan_id).first()
+                if db_scan and report_text:
+                    db_scan.report_text = report_text
+                    db_scan.report_generated_by = generated_by
+                    db.commit()
+                    logger.info("Scan %s narrative report upgraded [generated_by: %s]", scan_id, generated_by)
+        except Exception as exc:
+            logger.warning("Background narrative report generation for scan %s failed: %s", scan_id, exc)
 
     async def _analyze_url_pipeline(self, raw_url: str):
         """Pipeline for standalone URL analysis (Heuristics → Laya → Qwen → Intel → Risk Engine)."""
@@ -111,6 +176,34 @@ class ScanOrchestrator:
         intel_res = await self.threat_intel.query_url_intel(det_result.normalized_url or raw_url)
         all_findings.extend(intel_res.get("findings", []))
 
+        # Providers accounting for honest reporting
+        providers_used = ["Deterministic URL Heuristics Detector"]
+        providers_not_used = []
+
+        if laya_res.get("available"):
+            providers_used.append("Laya Neural Decision Engine (CPU ModernBERT)")
+        else:
+            providers_not_used.append("Laya Neural Decision Engine (unavailable)")
+
+        if qwen_res.get("available"):
+            providers_used.append("Qwen Semantic Threat Reasoner (GPU Ollama)")
+        else:
+            providers_not_used.append("Qwen Semantic Threat Reasoner (unavailable)")
+
+        if intel_res.get("enabled") and intel_res.get("providers_queried"):
+            providers_used.extend(intel_res.get("providers_queried"))
+        else:
+            providers_not_used.append("External Threat Intel (VirusTotal / URLScan: disabled in local mode)")
+        providers_not_used.append("WHOIS Domain Registration Records (not configured)")
+
+        meta = {
+            "detector_signals": det_result.signals,
+            "laya_signals": laya_res.get("signals", {}),
+            "qwen_signals": qwen_res.get("signals", {}),
+            "providers_used": providers_used,
+            "providers_not_used": providers_not_used,
+        }
+
         # 5. Pure Risk Engine Scoring
         return RiskEngine.calculate_risk(
             input_type="URL",
@@ -125,6 +218,7 @@ class ScanOrchestrator:
             qwen_verdict=qwen_res.get("verdict", ""),
             qwen_legitimate_explanations=qwen_res.get("legitimate_explanations", []),
             qwen_what_would_change_my_mind=qwen_res.get("what_would_change_my_mind", ""),
+            meta=meta,
         )
 
     async def _analyze_email_pipeline(self, raw_email_input: Any):
@@ -173,6 +267,26 @@ class ScanOrchestrator:
         qwen_res = await self.qwen.analyze_content(content_for_qwen, context_hints=context_hints)
         all_findings.extend(qwen_res.get("findings", []))
 
+        # Providers accounting for honest reporting
+        providers_used = ["Email Format & Header Parser", "Deterministic Email Heuristics Engine"]
+        providers_not_used = []
+        if top_urls:
+            providers_used.append("Laya Neural URL Engine (CPU ModernBERT)")
+        if qwen_res.get("available"):
+            providers_used.append("Qwen Semantic Content Reasoner (GPU Ollama)")
+        else:
+            providers_not_used.append("Qwen Semantic Content Reasoner (unavailable)")
+        providers_not_used.append("External Threat Intel (VirusTotal / URLScan: disabled in local mode)")
+        providers_not_used.append("Live DNS MX/SPF/DKIM Records (not configured)")
+
+        meta = {
+            "detector_signals": email_detector_signals,
+            "laya_signals": laya_combined_signals,
+            "qwen_signals": qwen_res.get("signals", {}),
+            "providers_used": providers_used,
+            "providers_not_used": providers_not_used,
+        }
+
         # 5. Risk Engine
         target_display = f"{parsed.subject or 'Email'} ({parsed.sender or 'Unknown'})"
         return RiskEngine.calculate_risk(
@@ -188,6 +302,7 @@ class ScanOrchestrator:
             qwen_verdict=qwen_res.get("verdict", ""),
             qwen_legitimate_explanations=qwen_res.get("legitimate_explanations", []),
             qwen_what_would_change_my_mind=qwen_res.get("what_would_change_my_mind", ""),
+            meta=meta,
         )
 
     async def _analyze_content_pipeline(self, raw_text: str):
@@ -232,6 +347,25 @@ class ScanOrchestrator:
                 category="content"
             ))
 
+        # Providers accounting for honest reporting
+        providers_used = ["Deterministic Content & Keyword Detector"]
+        providers_not_used = []
+        if extracted_urls:
+            providers_used.append("Laya Neural URL Engine (CPU ModernBERT)")
+        if qwen_res.get("available"):
+            providers_used.append("Qwen Semantic Content Reasoner (GPU Ollama)")
+        else:
+            providers_not_used.append("Qwen Semantic Content Reasoner (unavailable)")
+        providers_not_used.append("External Threat Intel (not applicable to raw text)")
+
+        meta = {
+            "detector_signals": signals,
+            "laya_signals": laya_combined_signals,
+            "qwen_signals": qwen_res.get("signals", {}),
+            "providers_used": providers_used,
+            "providers_not_used": providers_not_used,
+        }
+
         # 4. Risk Engine
         target_display = (raw_text.strip()[:60] + "...") if len(raw_text) > 60 else raw_text.strip()
         return RiskEngine.calculate_risk(
@@ -247,4 +381,5 @@ class ScanOrchestrator:
             qwen_verdict=qwen_res.get("verdict", ""),
             qwen_legitimate_explanations=qwen_res.get("legitimate_explanations", []),
             qwen_what_would_change_my_mind=qwen_res.get("what_would_change_my_mind", ""),
+            meta=meta,
         )

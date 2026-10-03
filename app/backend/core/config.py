@@ -24,13 +24,13 @@ class Settings(BaseSettings):
     # Redis & Queue
     REDIS_URL: str = "redis://localhost:6379/0"
     SCAN_QUEUE_NAME: str = "cyberguard:scans"
-    SCAN_TIMEOUT_SECONDS: int = 60
+    SCAN_TIMEOUT_SECONDS: int = 120
     MAX_SCAN_RETRIES: int = 2
 
     # Local AI - Ollama (Qwen)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen3:8b"
-    OLLAMA_TIMEOUT_SECONDS: float = 45.0
+    OLLAMA_TIMEOUT_SECONDS: float = 60.0
 
     # Local AI - Laya (URL System 1 Decision Model)
     LAYA_VENV_PATH: Optional[str] = None
