@@ -23,7 +23,7 @@ function getApiBaseUrl() {
   if (window.location.origin && !window.location.hostname.endsWith("github.io")) {
     return window.location.origin;
   }
-  return "https://ali-caps-prostores-derby.trycloudflare.com";
+  return "https://apart-season-gods-stopping.trycloudflare.com";
 }
 
 const API_BASE_URL = getApiBaseUrl();

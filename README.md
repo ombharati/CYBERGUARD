@@ -141,7 +141,7 @@ Designed specifically for resource-conscious local execution (tested on RTX 3050
 > 🚀 **Quick Start**: Run `./scripts/start_server.sh` to automatically launch PostgreSQL, Redis, local AI models, FastAPI, the worker queue, and the public HTTPS tunnel.
 >
 > 🌐 **Live Web App**: [ombharati.github.io/CYBERGUARD](https://ombharati.github.io/CYBERGUARD/)  
-> ⚡ **Live Server Subdomain**: [ali-caps-prostores-derby.trycloudflare.com](https://ali-caps-prostores-derby.trycloudflare.com)
+> ⚡ **Live Server Subdomain**: [apart-season-gods-stopping.trycloudflare.com](https://apart-season-gods-stopping.trycloudflare.com)
 
 ### 1. Prerequisites
 - Python 3.11+
