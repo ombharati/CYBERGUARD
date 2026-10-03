@@ -67,7 +67,7 @@ CYBERGUARD/
 
 ## 3. Testing Strategy
 
-CYBERGUARD maintains a comprehensive test suite designed to run quickly without mandatory network or GPU access during CI:
+CYBERGUARD maintains a comprehensive **45-test** suite designed to run quickly without mandatory network or GPU access during CI:
 
 ### Running Fast Deterministic Unit Tests (~4 seconds)
 These tests mock AI models and verify URL parsing, SSRF subnets, email heuristics, risk scoring math, and API route validation:
@@ -77,6 +77,7 @@ pytest -v \
   tests/test_email_detection.py \
   tests/test_risk_engine.py \
   tests/test_api.py \
+  tests/test_ai_adapters.py \
   tests/test_worker_and_queue.py \
   tests/test_large_inputs.py
 ```
@@ -117,3 +118,5 @@ mock_qwen.analyze_content = AsyncMock(return_value={"available": True, "signals"
    - `fix(queue): resolve socket timeout`
    - `perf(ai): cache singleton encoder`
    - `docs(readme): update setup steps`
+4. **Non-Blocking Reports**: Never re-introduce synchronous sequential Qwen calls in the scan pipeline. The latency budget is ~20s. Narrative reports are generated asynchronously via `_background_generate_report` and polled by the frontend.
+5. **GPU Serialization**: All Ollama calls must be serialized through `_gpu_lock` to prevent VRAM OOM on the 6 GB RTX 3050.

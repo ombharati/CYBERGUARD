@@ -147,12 +147,33 @@ Retrieves an existing scan report and all associated findings from PostgreSQL.
 - **Path**: `/api/v1/scans/{scan_id}`
 - **Parameters**: `scan_id` (string, e.g. `CG-B85CBFEB`)
 - **Responses**:
-  - `200 OK`: Returns the complete `ScanResponse` object.
+  - `200 OK`: Returns the complete `ScanResponse` object, including `report_text` and `report_generated_by` fields.
   - `404 Not Found`: If no scan with the given ID exists.
+
+> **Note**: The response includes `report_text` (the narrative report body) and `report_generated_by` (`"template"` for the instant deterministic report, `"qwen"` after the async Qwen narrative upgrade completes).
 
 ---
 
-### 2.5 List Scan History
+### 2.5 Poll Narrative Report Upgrade
+Check if a scan's report has been upgraded from the instant template to the full Qwen-generated narrative. Designed for frontend polling after initial scan completion.
+
+- **Method**: `GET`
+- **Path**: `/api/scans/{scan_id}/report` or `/api/v1/scans/{scan_id}/report`
+- **Parameters**: `scan_id` (string)
+- **Response**: `200 OK`
+
+```json
+{
+  "report_text": "## CYBERGUARD Security Analysis Report\n\n### 1. Executive Summary\n...",
+  "report_generated_by": "qwen"
+}
+```
+
+If the Qwen narrative is not yet available, `report_generated_by` will be `"template"`.
+
+---
+
+### 2.6 List Scan History
 Returns a reverse-chronological list of recent scans.
 
 - **Method**: `GET`

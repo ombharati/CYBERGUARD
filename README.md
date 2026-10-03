@@ -4,7 +4,7 @@
 
 `Cybersecurity` · `AI/ML` · `FastAPI` · `Laya` · `Qwen 3` · `PostgreSQL` · `Redis`
 
-CYBERGUARD is a local-first cybersecurity platform combining deterministic heuristics with local neural models (**Laya** and **Qwen 3**) to deliver explainable, high-speed security assessments for URLs, emails, and suspicious content with zero mandatory cloud dependencies.
+CYBERGUARD is a local-first cybersecurity platform combining **context-aware heuristics** with local neural models (**Laya** and **Qwen 3**) to deliver explainable, high-speed security assessments for URLs, emails, and suspicious content—including exportable plain-English narrative reports—with zero mandatory cloud dependencies.
 
 ---
 
@@ -131,8 +131,17 @@ Designed specifically for resource-conscious local execution (tested on RTX 3050
 | Model | Role | Runtime & Device | Purpose |
 |---|---|---|---|
 | **Laya** | URL Decision Model | **CPU** (`torch` / ModernBERT) | Fast System 1 calibrated probability classifier (~80ms). Never receives entire emails. |
-| **Qwen 3 (8B)** | Semantic Analysis | **GPU** (Ollama `qwen3:8b`) | Deep System 2 contextual reasoning, urgency assessment, and explanation generation. |
+| **Qwen 3 (8B)** | Semantic Analysis + Reports | **GPU** (Ollama `qwen3:8b`) | Deep System 2 contextual reasoning, urgency assessment, explanation generation, and asynchronous plain-English narrative report writing. |
 | **Risk Engine** | Final Scoring | **Pure Deterministic Logic** | Synthesizes signals into an explainable 0–100 score. Never makes I/O or model calls. |
+
+### Non-Blocking Report Architecture
+
+Scans return results in **~18–20 seconds** using deterministic analysis + Laya + Qwen scoring. A **template-based 7-section report** is delivered immediately. In the background, Qwen generates a full **plain-English narrative report** (~400–600 words) which automatically replaces the template when ready. The frontend polls for the upgraded report transparently.
+
+### GPU Concurrency & Warm-Up
+
+- A **thread-safe GPU lock** (`_gpu_lock`) serializes all Ollama calls to prevent VRAM OOM on the 6 GB RTX 3050.
+- On startup, the Qwen adapter sends a `keep_alive: "24h"` warm-up request to pre-load model weights into VRAM, eliminating cold-start latency.
 
 ---
 
@@ -167,21 +176,23 @@ alembic upgrade head
 python main.py
 ```
 
-### 4. Run the Background Queue Worker (Optional for Async Queue)
+### 4. Run the Background Queue Worker (Required for Async Scans & Reports)
 ```bash
 python -m app.backend.services.worker
 ```
 
 Open `http://localhost:8000` in your browser to interact with the CYBERGUARD dashboard.
 
+> **Tip**: Click **"Export Report"** on any completed scan to download the full narrative analysis as a `.txt` file.
+
 ---
 
 ## Automated Test Suite
 
-CYBERGUARD includes 36 automated tests covering API validation, deterministic URL detection, SSRF protection, email parsing, AI adapters, risk scoring, queue fallback, and live integration:
+CYBERGUARD includes **45 automated tests** covering API validation, deterministic URL detection, SSRF protection, email parsing, AI adapters, risk scoring, large input handling, queue fallback, and live integration:
 
 ```bash
-# Run unit and API tests (fast)
+# Run unit and API tests (fast, ~4 seconds)
 pytest -k "not test_live_integration"
 
 # Run complete test suite including live model integration
@@ -194,10 +205,12 @@ pytest
 
 - `GET /health` — System status (Database, Redis, Ollama, Laya)
 - `POST /api/v1/scans` — Queue a scan asynchronously (`?sync=true` for immediate result)
-- `GET /api/v1/scans/{scan_id}` — Retrieve scan status and complete findings
+- `GET /api/v1/scans/{scan_id}` — Retrieve scan status, findings, and narrative report
+- `GET /api/v1/scans/{scan_id}/report` — Poll for upgraded Qwen narrative report
 - `GET /api/v1/scans` — List scan history
 - `POST /api/scans` — Frontend compatibility endpoint (synchronous execution)
 - `GET /api/scans` — Frontend scan history endpoint
+- `GET /api/scans/{scan_id}/report` — Frontend report polling endpoint
 - `GET /` — Serves the frontend user interface directly
 
 ---

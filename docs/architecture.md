@@ -44,7 +44,7 @@ CYBERGUARD follows a layered architecture where each subsystem has a defined res
 ┌─────────────────────────────────────────────────────────────┐
 │                     INTELLIGENCE LAYER                       │
 │                                                             │
-│       Laya Adapter │ Threat Intel Adapters │ DNS Analysis   │
+│  Laya Adapter │ Qwen Adapter │ Threat Intel │ DNS Analysis   │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              │ Normalized Signals
@@ -68,7 +68,16 @@ CYBERGUARD follows a layered architecture where each subsystem has a defined res
                     │                 │
                     ▼                 ▼
                Scan History        Frontend
+                                     │
+                              (polls for report
+                               upgrade via
+                               /report endpoint)
 ```
+
+### Two-Phase Report Generation
+
+1. **Phase 1 (Synchronous)**: Upon scan completion, a deterministic **template-based report** is generated instantly from findings, signals, and metadata. This is stored as the initial `report_text` and the scan is marked `completed`.
+2. **Phase 2 (Asynchronous)**: A background task (`_background_generate_report`) calls Qwen to produce a **plain-English narrative report** (~400–600 words). When ready, it replaces the template in the database. The frontend polls `GET /api/scans/{id}/report` to transparently upgrade the displayed report.
 
 ---
 
@@ -191,8 +200,8 @@ External systems are isolated behind adapters.
                        │
         ┌──────────────┼──────────────┐
         ▼              ▼              ▼
-   Laya Adapter   VirusTotal      urlscan
-                      Adapter       Adapter
+   Laya Adapter   Qwen Adapter   VirusTotal
+   (CPU)           (GPU/Ollama)      Adapter       urlscan
 ```
 
 The rest of CYBERGUARD should not depend directly on external SDKs.
@@ -335,3 +344,17 @@ Optional dependencies must not become mandatory failure points.
 ```
 
 Local deterministic analysis should remain capable of producing a result when optional intelligence providers are unavailable.
+
+---
+
+## 9. Context-Aware Detection Philosophy
+
+Detection rules follow a **context-aware** rather than **keyword-matching** model.
+
+A signal like `/login` in a URL path is only meaningful when combined with a domain or behavior mismatch. Each rule asks three questions:
+
+1. **Identity Check**: Does the domain match the claimed brand?
+2. **Behavior Check**: Is this action expected in context?
+3. **Request Check**: Is something being asked that a real service wouldn't ask?
+
+If all three are clean, the keyword is noise. This prevents false positives on legitimate banking, SaaS, and payment URLs.
