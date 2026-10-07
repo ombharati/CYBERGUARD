@@ -1,15 +1,10 @@
-#!/usr/bin/env bash
-# ==============================================================================
-# CYBERGUARD — Server Runner & Public Tunnel Exposer
-# Turns your laptop into a full live server with a public HTTPS subdomain link.
-# ==============================================================================
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 echo "=========================================================="
-echo "🛡️  Starting CYBERGUARD Local-First Cybersecurity Server"
+echo "🛡️  Starting Server"
 echo "=========================================================="
 
 # 1. Check or start PostgreSQL and Redis containers
