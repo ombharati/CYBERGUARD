@@ -11,6 +11,8 @@ Architectural constraints:
 - Graceful degradation if unavailable.
 """
 import sys
+import time
+import concurrent.futures
 import logging
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -54,9 +56,10 @@ def _get_laya_url_questions() -> Dict[str, Any]:
 class LayaAdapter:
     """Adapter for local Laya model inference on CPU."""
 
-    def __init__(self, agent: Optional[Any] = None, available: Optional[bool] = None):
+    def __init__(self, agent: Optional[Any] = None, available: Optional[bool] = None, timeout: float = 10.0):
         self._custom_agent = agent
         self._custom_available = available
+        self.timeout = timeout
 
     def _ensure_laya_in_sys_path(self):
         """Add Laya's virtualenv site-packages to sys.path if not already present."""
@@ -73,7 +76,7 @@ class LayaAdapter:
             sp_str = str(sp)
             if sp.exists() and sp_str not in sys.path:
                 sys.path.insert(0, sp_str)
-                logger.info("Added Laya site-packages to sys.path: %s", sp_str)
+                logger.info("[laya_init] Added Laya site-packages to sys.path: %s", sp_str)
                 break
 
     def initialize(self) -> bool:
@@ -94,18 +97,18 @@ class LayaAdapter:
             os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
             from laya import Agent
 
-            logger.info("Initializing singleton Laya Agent on device: %s", settings.LAYA_DEVICE)
+            logger.info("[laya_init] Initializing singleton Laya Agent on device: %s", settings.LAYA_DEVICE)
             _shared_laya_agent = Agent(
                 "convaiinnovations/laya",
                 device=settings.LAYA_DEVICE,
             )
             _laya_available = True
-            logger.info("Laya Agent initialized successfully (singleton cached in CPU RAM).")
+            logger.info("[laya_init] Laya Agent initialized successfully (singleton cached in CPU RAM).")
             return True
         except Exception as exc:
             _laya_available = False
             _laya_init_error = str(exc)
-            logger.warning("Laya Agent is unavailable: %s. Scans will proceed using deterministic heuristics.", exc)
+            logger.warning("[laya_init] Laya Agent is unavailable: %s. Scans will proceed using deterministic heuristics.", exc)
             return False
 
     def is_available(self) -> bool:
@@ -118,7 +121,7 @@ class LayaAdapter:
 
     def analyze_url(self, compact_url: str) -> Dict[str, Any]:
         """
-        Analyze a compact URL string with Laya.
+        Analyze a compact URL string with Laya with timeout protection.
         Returns validated structured signals and findings.
         """
         global _shared_laya_agent, _laya_init_error
@@ -142,13 +145,31 @@ class LayaAdapter:
 
         # Strict input limiting: URLs only, capped length
         clean_url = compact_url.strip()[:settings.MAX_URL_LENGTH]
+        start_time = time.perf_counter()
 
         try:
             questions = _get_laya_url_questions()
-            result = agent_instance.predict(
-                {"url": clean_url},
-                questions=questions,
-            )
+            logger.info("[laya_inference] Starting inference for URL: %s (timeout=%ss)", clean_url, self.timeout)
+
+            # Enforce strict timeout via ThreadPoolExecutor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    agent_instance.predict,
+                    {"url": clean_url},
+                    questions=questions,
+                )
+                try:
+                    result = future.result(timeout=self.timeout)
+                except concurrent.futures.TimeoutError:
+                    logger.warning("[laya_inference] Timed out after %ss for URL %s", self.timeout, clean_url)
+                    return {
+                        "available": False,
+                        "error": f"Laya inference timed out after {self.timeout}s",
+                        "signals": {},
+                        "findings": [],
+                    }
+
+            latency_ms = (time.perf_counter() - start_time) * 1000
             answers = result.get("answers", {})
 
             # Extract calibrated probabilities and scores
@@ -194,6 +215,7 @@ class LayaAdapter:
                     category="laya_ai",
                 ))
 
+            logger.info("[laya_inference] Completed in %.2fms for URL %s (phishing_p=%.2f)", latency_ms, clean_url, phishing_score)
             return {
                 "available": True,
                 "signals": signals,
@@ -202,7 +224,7 @@ class LayaAdapter:
             }
 
         except Exception as exc:
-            logger.warning("Laya inference failed for URL %s: %s", clean_url, exc)
+            logger.warning("[laya_inference] Failed for URL %s: %s", clean_url, exc)
             return {
                 "available": False,
                 "error": f"Inference failure: {str(exc)}",

@@ -58,7 +58,8 @@ function formatDate(timestamp) {
       dateStyle: "medium",
       timeStyle: "short"
     }).format(new Date(timestamp));
-  } catch {
+  } catch (err) {
+    console.warn("[formatDate] Could not format timestamp:", timestamp, err);
     return "Recent";
   }
 }
@@ -109,7 +110,8 @@ function loadScansFromStorage() {
     if (!raw) return createInitialScans();
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) && parsed.length ? parsed : createInitialScans();
-  } catch {
+  } catch (err) {
+    console.warn("[storage] Error parsing stored scans from localStorage:", err);
     return createInitialScans();
   }
 }
@@ -163,7 +165,9 @@ function updateStore(mutationFn) {
   mutationFn(store);
   try {
     localStorage.setItem("cyberguard_scans", JSON.stringify(store.scans.slice(0, 50)));
-  } catch {}
+  } catch (err) {
+    console.warn("[updateStore] Error saving scans to localStorage:", err);
+  }
   render();
 }
 
@@ -263,7 +267,9 @@ class NetworkScheduler {
     for (const controller of this.activeControllers) {
       try {
         controller.abort(reason);
-      } catch {}
+      } catch (err) {
+        console.warn("[scheduler] Error aborting controller:", err);
+      }
     }
     this.activeControllers.clear();
     while (this.queue.length > 0) {
@@ -1121,12 +1127,58 @@ window.addEventListener("offline", () => {
 });
 
 /* -----------------------------
+   HEALTH CHECK (FAIL LOUD)
+   - 2-second timeout via AbortController
+   - Never silently falls back to mock data
+   - Surfaces status & failures in UI pill & error banner
+----------------------------- */
+async function checkHealth(timeoutMs = 2000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort("Health check timeout (2s exceeded)");
+  }, timeoutMs);
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      throw new Error(`Health check returned HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    console.info("[health_check] Backend reported healthy:", data);
+    updateStore((s) => {
+      s.health = data.status === "ok" ? "healthy" : "degraded";
+      s.connection = "online";
+      if (s.error && s.error.startsWith("Backend connection failed")) {
+        s.error = null;
+      }
+    });
+    return data;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const msg = err.name === "AbortError" ? `Health check timed out after ${timeoutMs / 1000}s` : (err.message || "Failed to connect to backend");
+    console.error("[health_check] Health check failed loudly:", msg, err);
+    updateStore((s) => {
+      s.health = "unhealthy";
+      s.connection = "offline";
+      s.error = `Backend connection failed: ${msg}. System is operating in offline mode.`;
+    });
+    throw err;
+  }
+}
+
+/* -----------------------------
    INITIAL STARTUP & HISTORY SYNC
 ----------------------------- */
 // 1. Initial synchronous paint from state
 render();
 
-// 2. Non-blocking initial history sync via scheduler
+// 2. Immediate health check (fail loud with 2s timeout)
+checkHealth(2000).catch((err) => {
+  console.warn("[startup] Initial health check detected backend offline:", err.message);
+});
+
+// 3. Non-blocking initial history sync via scheduler
 scheduler
   .enqueue(
     (signal) =>
@@ -1150,6 +1202,11 @@ scheduler
       scheduleNextPoll(500);
     }
   })
-  .catch(() => {
-    // If backend unavailable, UI remains functional with cached state
+  .catch((err) => {
+    console.error("[history_sync] Failed to load history from backend:", err);
+    updateStore((s) => {
+      if (!s.error) {
+        s.error = `Unable to load scan history: ${err.message || "Network error"}`;
+      }
+    });
   });

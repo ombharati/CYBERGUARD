@@ -213,3 +213,21 @@ async def test_qwen_generate_narrative_report_fallback_when_unavailable():
         assert "6. What was not checked" in res["report_text"]
         assert "7. Recommendation" in res["report_text"]
 
+
+def test_laya_adapter_timeout_handling():
+    import time
+    mock_slow_agent = MagicMock()
+    def slow_predict(*args, **kwargs):
+        time.sleep(0.5)
+        return {}
+
+    mock_slow_agent.predict.side_effect = slow_predict
+    # Instantiate with very short timeout of 0.1s
+    adapter = LayaAdapter(agent=mock_slow_agent, available=True, timeout=0.1)
+    result = adapter.analyze_url("https://example.com/test-timeout")
+    assert result["available"] is False
+    assert "timed out" in result["error"]
+    assert result["signals"] == {}
+    assert result["findings"] == []
+
+

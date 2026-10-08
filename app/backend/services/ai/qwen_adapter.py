@@ -272,12 +272,17 @@ class QwenAdapter:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 res = await client.get(f"{self.base_url}/api/tags")
                 return res.status_code == 200
-        except Exception:
+        except httpx.TimeoutException:
+            logger.info("[qwen_ping] Ollama ping timed out after 2.0s")
+            return False
+        except Exception as exc:
+            logger.info("[qwen_ping] Ollama ping failed: %s", exc)
             return False
 
     async def warmup(self) -> bool:
         """Pre-load Qwen weights into GPU VRAM and keep active for 24h to eliminate cold start."""
         if not await self.is_available():
+            logger.info("[qwen_warmup] Skipping warmup; Ollama is currently unavailable.")
             return False
         try:
             payload = {
@@ -288,13 +293,16 @@ class QwenAdapter:
                 "keep_alive": "24h",
                 "options": {"num_ctx": 2048, "num_predict": 1},
             }
+            logger.info("[qwen_warmup] Warming up model '%s' in GPU VRAM (timeout=20.0s)", self.model)
             async with httpx.AsyncClient(timeout=20.0) as client:
                 res = await client.post(f"{self.base_url}/api/generate", json=payload)
                 if res.status_code == 200:
-                    logger.info("[qwen] Model '%s' successfully warmed up in GPU VRAM (keep_alive: 24h).", self.model)
+                    logger.info("[qwen_warmup] Model '%s' successfully warmed up in GPU VRAM (keep_alive: 24h).", self.model)
                     return True
+        except httpx.TimeoutException:
+            logger.warning("[qwen_warmup] Model warmup timed out after 20.0s")
         except Exception as exc:
-            logger.warning("[qwen] Model warmup failed: %s", exc)
+            logger.warning("[qwen_warmup] Model warmup failed: %s", exc)
         return False
 
     async def analyze_url(
@@ -607,6 +615,8 @@ class QwenAdapter:
                     }
                 logger.warning("[%s] Retry rejected. Falling back to deterministic template.", tag)
 
+        except httpx.TimeoutException as timeout_exc:
+            logger.warning("[%s] Narrative report generation timed out after %ss: %s. Falling back to template.", tag, report_timeout, timeout_exc)
         except Exception as exc:
             logger.warning("[%s] Report generation exception: %s. Falling back to template.", tag, exc)
 

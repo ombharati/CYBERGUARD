@@ -48,6 +48,7 @@ class ExternalThreatIntelAdapter:
                 # VirusTotal v3 requires url identifier encoded as base64 without padding
                 import base64
                 url_id = base64.urlsafe_b64encode(url.encode()).decode().strip("=")
+                logger.info("[threat_intel_vt] Querying VirusTotal with timeout=%ss", self.timeout)
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     resp = await client.get(
                         f"https://www.virustotal.com/api/v3/urls/{url_id}",
@@ -65,10 +66,16 @@ class ExternalThreatIntelAdapter:
                             description=f"{malicious_count} security vendors flagged this URL as malicious.",
                             category="threat_intel",
                         ))
+                    logger.info("[threat_intel_vt] VirusTotal completed (malicious_count=%s)", malicious_count)
                 elif resp.status_code == 404:
                     signals["virustotal_malicious"] = 0
+                    logger.info("[threat_intel_vt] URL not found in VirusTotal database")
+                else:
+                    logger.warning("[threat_intel_vt] VirusTotal returned HTTP %s", resp.status_code)
+            except httpx.TimeoutException as vt_timeout:
+                logger.warning("[threat_intel_vt] VirusTotal lookup timed out after %ss: %s", self.timeout, vt_timeout)
             except Exception as vt_exc:
-                logger.warning("VirusTotal lookup failed: %s", vt_exc)
+                logger.warning("[threat_intel_vt] VirusTotal lookup failed: %s", vt_exc)
 
         return {
             "enabled": True,

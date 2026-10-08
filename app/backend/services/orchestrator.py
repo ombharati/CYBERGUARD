@@ -45,6 +45,7 @@ class ScanOrchestrator:
         try:
             input_type = scan.input_type.lower()
             raw_data = scan.raw_input
+            logger.info("[orchestrator_start] Starting scan pipeline for %s (type: %s)", scan.id, input_type)
 
             if input_type == "url":
                 assessment = await self._analyze_url_pipeline(str(raw_data))
@@ -88,7 +89,7 @@ class ScanOrchestrator:
 
             db.commit()
             db.refresh(scan)
-            logger.info("Scan %s completed with score %s (%s) [Initial report: %s]", scan.id, scan.risk_score, scan.classification, scan.report_generated_by)
+            logger.info("[orchestrator_complete] Scan %s completed with score %s (%s) [Initial report: %s]", scan.id, scan.risk_score, scan.classification, scan.report_generated_by)
 
             # Trigger narrative report upgrade asynchronously in the background
             asyncio.create_task(
@@ -106,7 +107,7 @@ class ScanOrchestrator:
             return scan
 
         except Exception as exc:
-            logger.error("Scan %s failed during execution: %s", scan_id, exc, exc_info=True)
+            logger.error("[orchestrator_error] Scan %s failed during execution: %s", scan_id, exc, exc_info=True)
             scan.status = "failed"
             scan.error_message = str(exc)
             scan.retries += 1
@@ -148,9 +149,9 @@ class ScanOrchestrator:
                     db_scan.report_text = report_text
                     db_scan.report_generated_by = generated_by
                     db.commit()
-                    logger.info("Scan %s narrative report upgraded [generated_by: %s]", scan_id, generated_by)
+                    logger.info("[orchestrator_narrative] Scan %s narrative report upgraded [generated_by: %s]", scan_id, generated_by)
         except Exception as exc:
-            logger.warning("Background narrative report generation for scan %s failed: %s", scan_id, exc)
+            logger.warning("[orchestrator_narrative_error] Background narrative report generation for scan %s failed: %s", scan_id, exc)
 
     async def _analyze_url_pipeline(self, raw_url: str):
         """Pipeline for standalone URL analysis (Heuristics → Laya → Qwen → Intel → Risk Engine)."""
