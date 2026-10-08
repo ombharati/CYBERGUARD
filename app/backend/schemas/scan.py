@@ -65,6 +65,7 @@ class ScanResponse(BaseModel):
     report_generated_by: Optional[str] = None
     recommended_actions: List[str] = Field(default_factory=list)
     timestamp: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class HealthResponse(BaseModel):

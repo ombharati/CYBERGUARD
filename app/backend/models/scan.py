@@ -92,6 +92,7 @@ class Scan(Base):
             "report_generated_by": self.report_generated_by or "",
             "recommended_actions": self.recommended_actions or [],
             "timestamp": self.created_at.isoformat() if self.created_at else None,
+            "error_message": self.error_message,
         }
 
 
