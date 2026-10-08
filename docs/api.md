@@ -14,6 +14,49 @@ All endpoints accept and return UTF-8 JSON payloads.
 
 ---
 
+## 1.5 Authentication (Optional)
+
+### Overview
+CYBERGUARD supports an optional shared-secret API key to deter unauthorized usage when exposed publicly (e.g., via Cloudflare Tunnels). This acts as a simple speed bump rather than full authentication. 
+
+### Threat Model
+**What it protects against:** Casual URL discovery. If someone stumbles upon your Cloudflare Tunnel URL, they will not be able to consume your GPU resources by submitting scans.
+**What it does NOT protect against:** Anyone who opens browser DevTools and reads the network requests (the key is sent as a plain header), or anyone you share the key with.
+
+### Setting the key on the backend
+To enable it, export the `CYBERGUARD_API_KEY` environment variable before starting the backend.
+Example using a random 16-byte hex string:
+```bash
+export CYBERGUARD_API_KEY=$(openssl rand -hex 16)
+uv run uvicorn app.backend.main:app --port 8000
+```
+The `/health` endpoint remains exempt and is always accessible without a key.
+
+### Configuring the frontend
+1. Open the CYBERGUARD frontend.
+2. Click the **Settings** button in the navigation bar to open the Settings modal.
+3. Paste your backend URL and the API key.
+4. Click **Test connection**. It will test if the server is reachable and if the key is accepted.
+5. Click **Save**.
+
+### Share link format
+For convenience, you can share a pre-configured link with authorized users:
+`https://ombharati.github.io/CYBERGUARD/?api=URL&key=KEY`
+
+When loaded, the frontend automatically saves the `api` and `key` parameters to local storage, and strips them from the visible URL using `history.replaceState` so the address bar stays clean.
+
+### Disabling auth
+To disable authentication entirely, simply unset the `CYBERGUARD_API_KEY` environment variable and restart the backend. Note that any shared links with a key will still work because the backend completely ignores the key header when auth is disabled. This keeps local development frictionless.
+
+### Rotating the key
+If a key is compromised, change the environment variable on the backend and restart it. Old keys will stop working immediately. You will need to update the frontend settings or send new share links for anyone who needs access.
+
+### Error codes
+- `401 Unauthorized` with `{"detail": "Missing API key"}`: The backend has auth enabled, but no key was provided.
+- `401 Unauthorized` with `{"detail": "Invalid API key"}`: The key provided does not match the backend.
+
+---
+
 ## 2. Endpoints
 
 ### 2.1 Health & Telemetry Check
