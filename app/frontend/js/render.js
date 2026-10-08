@@ -549,6 +549,37 @@ function render() {
       signalsList.replaceChildren(...signals.map(createSignalElement));
     }
 
+    const recActions = activeScan.recommended_actions || [];
+    const recCount = $("#recommendations-count");
+    if (recCount) {
+      recCount.textContent = `${recActions.length} action${recActions.length === 1 ? "" : "s"}`;
+    }
+    const recList = $("#recommendations-list");
+    if (recList) {
+      if (recActions.length === 0) {
+        const emptyDiv = document.createElement("div");
+        emptyDiv.className = "empty-note";
+        emptyDiv.textContent = "No containment required; baseline verified.";
+        recList.replaceChildren(emptyDiv);
+      } else {
+        recList.replaceChildren(
+          ...recActions.map((action) => {
+            const label = document.createElement("label");
+            label.className = "recommendation-item";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.className = "rec-checkbox";
+            const text = document.createElement("span");
+            text.className = "rec-text";
+            text.textContent = action;
+            label.appendChild(checkbox);
+            label.appendChild(text);
+            return label;
+          })
+        );
+      }
+    }
+
 
     const resId = $("#result-id");
     if (resId) resId.textContent = activeScan.id;

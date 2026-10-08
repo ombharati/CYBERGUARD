@@ -59,25 +59,25 @@
             </span>
           </div>
 
-          <div class="mode-tabs" role="tablist">
-            <button class="mode-tab active" data-mode="url" type="button">
+          <div class="mode-tabs" role="tablist" aria-label="Analysis modes">
+            <button class="mode-tab active" data-mode="url" role="tab" aria-selected="true" aria-controls="panel-url" type="button" aria-label="URL analysis mode">
               <span class="tab-icon">↗</span>
               URL
             </button>
 
-            <button class="mode-tab" data-mode="email" type="button">
+            <button class="mode-tab" data-mode="email" role="tab" aria-selected="false" aria-controls="panel-email" type="button" aria-label="Email analysis mode">
               <span class="tab-icon">✉</span>
               Email
             </button>
 
-            <button class="mode-tab" data-mode="content" type="button">
+            <button class="mode-tab" data-mode="content" role="tab" aria-selected="false" aria-controls="panel-content" type="button" aria-label="Content analysis mode">
               <span class="tab-icon">{ }</span>
               Content
             </button>
           </div>
 
           <!-- URL -->
-          <div class="mode-panel active-panel" id="panel-url">
+          <div class="mode-panel active-panel" id="panel-url" role="tabpanel" aria-label="URL analysis panel">
             <label for="url-input">URL to analyze</label>
             <div class="input-row">
               <input
@@ -86,7 +86,7 @@
                 placeholder="https://example.com/login"
                 autocomplete="off"
               />
-              <button id="sample-url" class="secondary-button" type="button">
+              <button id="sample-url" class="secondary-button" type="button" aria-label="Insert sample URL">
                 Example
               </button>
             </div>
@@ -96,7 +96,7 @@
           </div>
 
           <!-- EMAIL -->
-          <div class="mode-panel" id="panel-email">
+          <div class="mode-panel" id="panel-email" role="tabpanel" aria-label="Email analysis panel">
             <div class="form-grid">
               <div>
                 <label for="email-sender">Sender</label>
@@ -132,7 +132,7 @@
           </div>
 
           <!-- CONTENT -->
-          <div class="mode-panel" id="panel-content">
+          <div class="mode-panel" id="panel-content" role="tabpanel" aria-label="Content analysis panel">
             <label for="content-input">Content to analyze</label>
             <textarea
               id="content-input"
@@ -263,6 +263,15 @@
                 </div>
 
                 <div id="signals-list" class="signals-list"></div>
+              </div>
+
+              <!-- RESPONSE RECOMMENDATIONS PANEL -->
+              <div class="detail-section response-recommendations-section">
+                <div class="section-heading">
+                  <h3>Recommended Actions</h3>
+                  <span id="recommendations-count" class="pill-count">0 actions</span>
+                </div>
+                <div id="recommendations-list" class="recommendations-list"></div>
               </div>
             </div>
           </div>

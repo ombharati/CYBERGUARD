@@ -1,0 +1,121 @@
+{
+  "phishing_url+lookalike_domain": [
+    "Block the URL at the gateway",
+    "Quarantine related emails",
+    "Warn the user",
+    "Report to brand protection"
+  ],
+  "phishing_url+ssrf": [
+    "Block cloud metadata endpoint access (169.254.169.254)",
+    "Restrict egress network security groups",
+    "Review internal API gateway authorization policies",
+    "Alert DevOps infrastructure team"
+  ],
+  "phishing_url+credential_harvesting": [
+    "Block destination domain at web proxy and DNS sinkhole",
+    "Revoke active user browser sessions",
+    "Force enterprise directory credential reset",
+    "Notify the SOC"
+  ],
+  "phishing_email+credential_request": [
+    "Quarantine the email",
+    "Force password reset for the recipient",
+    "Revoke active sessions",
+    "Notify the SOC"
+  ],
+  "phishing_email+urgency": [
+    "Tag email with external sender warning banner",
+    "Alert recipient to verify communication via secondary channel",
+    "Review sender mailbox reputation"
+  ],
+  "identity_spoof+spf_fail": [
+    "Block the sender domain",
+    "Warn the recipient",
+    "Escalate to SOC if repeated"
+  ],
+  "identity_spoof+display_name_spoofing": [
+    "Quarantine message across all tenant mailboxes",
+    "Configure display-name impersonation protection rule in mail gateway",
+    "Warn recipient of spoofed executive persona"
+  ],
+  "identity_spoof+free_webmail_impersonation": [
+    "Block sender address",
+    "Warn recipient against financial requests or wire transfers",
+    "Conduct out-of-band verification with claimed executive"
+  ],
+  "identity_spoof+reply_to_mismatch": [
+    "Verify recipient did not send replies to redirected address",
+    "Quarantine related emails across mailboxes",
+    "Alert SOC to possible Business Email Compromise (BEC)"
+  ],
+  "log_anomaly+brute_force": [
+    "Lock the targeted account",
+    "Block the source IP",
+    "Force MFA re-enrollment",
+    "Notify the SOC"
+  ],
+  "log_anomaly+password_spraying": [
+    "Enact automated IP block on source subnet",
+    "Temporarily lock targeted accounts pending password review",
+    "Conduct threat hunting for successful logins from source IP",
+    "Notify the SOC"
+  ],
+  "log_anomaly+impossible_travel": [
+    "Revoke active sessions",
+    "Require MFA",
+    "Notify the user and SOC"
+  ],
+  "log_anomaly+unknown_device": [
+    "Issue MFA step-up authentication challenge",
+    "Alert user of new hardware fingerprint",
+    "Audit session activity for anomalous resource access"
+  ],
+  "log_anomaly+off_hours_access": [
+    "Verify business justification with account owner",
+    "Review session actions and data exfiltration logs",
+    "Notify SOC on-call analyst"
+  ],
+  "log_anomaly+account_takeover": [
+    "Immediately terminate active session",
+    "Force emergency password reset and revoke OAuth tokens",
+    "Audit post-authentication commands and API calls",
+    "Isolate host if persistence is suspected"
+  ],
+  "log_anomaly+privilege_escalation": [
+    "Audit sudoers policy and authorized administrator rosters",
+    "Review bash history and auth.log for privilege abuse",
+    "Revoke unauthorized administrative credentials",
+    "Escalate to SOC incident commander"
+  ],
+  "log_anomaly+ssh_persistence": [
+    "Inspect and scrub ~/.ssh/authorized_keys on target system",
+    "Audit SSH daemon configuration and key origin",
+    "Rotate deployment keys and service credentials",
+    "Review auth logs for lateral movement"
+  ],
+  "high_risk+default": [
+    "Isolate affected endpoint or account",
+    "Block malicious indicator at security edge",
+    "Notify SOC incident response team",
+    "Preserve audit logs for forensic review"
+  ],
+  "critical+default": [
+    "Execute automated incident containment protocol",
+    "Revoke credentials and active tokens across all endpoints",
+    "Block source indicators at boundary firewalls",
+    "Page SOC incident response on-call"
+  ],
+  "medium+default": [
+    "Warn user of suspicious indicators",
+    "Perform secondary verification of sender or source",
+    "Monitor targeted account for anomalous activity"
+  ],
+  "low+default": [
+    "Log security event for baseline monitoring",
+    "No immediate containment action required"
+  ],
+  "safe+default": [
+    "No containment required; verified legitimate security baseline",
+    "Continue standard telemetry logging"
+  ]
+}

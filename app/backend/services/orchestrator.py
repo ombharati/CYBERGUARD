@@ -65,13 +65,28 @@ class ScanOrchestrator:
             scan.explanation = assessment.explanation
             scan.signals = assessment.signals
 
-            # Extract recommended actions from findings or response rules
-            rec_actions: List[str] = []
+            # Extract recommended actions from response rules and findings
+            from app.backend.services.recommendation import get_recommended_actions
+            top_signal = None
+            for f in assessment.findings:
+                if f.severity in ("high", "medium") and getattr(f, "signal_type", None):
+                    top_signal = f.signal_type
+                    break
+            if not top_signal and assessment.findings:
+                top_signal = getattr(assessment.findings[0], "signal_type", None)
+
+            finding_actions: List[str] = []
             for f in assessment.findings:
                 for act in getattr(f, "recommended_actions", []):
-                    if act not in rec_actions:
-                        rec_actions.append(act)
-            scan.recommended_actions = rec_actions
+                    if act not in finding_actions:
+                        finding_actions.append(act)
+
+            scan.recommended_actions = get_recommended_actions(
+                classification=assessment.classification or "Safe",
+                top_signal_type=top_signal,
+                input_type=scan.input_type,
+                existing_finding_actions=finding_actions,
+            )
 
             # Instant deterministic 7-section report baseline
             meta = getattr(assessment, "meta", {})
