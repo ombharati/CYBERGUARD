@@ -53,6 +53,8 @@ class ScanOrchestrator:
                 assessment = await self._analyze_email_pipeline(raw_data)
             elif input_type == "logs":
                 assessment = await self._analyze_logs_pipeline(str(raw_data))
+            elif input_type in ("identity", "headers"):
+                assessment = await self._analyze_identity_pipeline(str(raw_data))
             else:  # content / text
                 assessment = await self._analyze_content_pipeline(str(raw_data))
 
@@ -425,6 +427,41 @@ class ScanOrchestrator:
 
         return RiskEngine.calculate_risk(
             input_type="Logs",
+            target=target_display,
+            detector_signals=det_result.signals,
+            laya_signals={},
+            qwen_signals={},
+            external_intel_signals={},
+            all_findings=all_findings,
+            meta=meta,
+        )
+
+    async def _analyze_identity_pipeline(self, raw_headers: str):
+        """Pipeline for raw email headers & identity impersonation analysis."""
+        from detection.identity.detector import analyze_identity_headers
+
+        det_result = analyze_identity_headers(raw_headers)
+        all_findings: List[Finding] = list(det_result.findings)
+
+        providers_used = ["Deterministic Header & Identity Impersonation Analyzer"]
+        providers_not_used = [
+            "Laya Neural Decision Engine (URL/Email body only)",
+            "External Threat Intel (VirusTotal/URLScan: disabled in local mode)",
+            "Live WHOIS Server Query (local baseline mode)",
+        ]
+
+        meta = {
+            "detector_signals": det_result.signals,
+            "impersonation_confidence": det_result.impersonation_confidence,
+            "providers_used": providers_used,
+            "providers_not_used": providers_not_used,
+        }
+
+        sender_label = det_result.sender_address or det_result.sender_domain or "Unknown Sender"
+        target_display = f"Identity Header ({sender_label})"
+
+        return RiskEngine.calculate_risk(
+            input_type="Identity",
             target=target_display,
             detector_signals=det_result.signals,
             laya_signals={},

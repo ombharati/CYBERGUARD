@@ -87,6 +87,32 @@ def test_create_logs_scan_api(mock_enqueue):
     assert scan["id"].startswith("CG-")
 
 
+@patch("app.backend.services.scan_service.enqueue_scan_id", return_value=True)
+def test_create_identity_scan_api(mock_enqueue):
+    header_sample = "From: Alice <alice@example.com>\nSubject: Test\nAuthentication-Results: spf=pass"
+    res = client.post(
+        "/api/v1/scans",
+        json={"input_type": "identity", "data": header_sample},
+    )
+    assert res.status_code == 201
+    scan = res.json()
+    assert scan["type"] == "IDENTITY"
+    assert scan["id"].startswith("CG-")
+
+
+@patch("app.backend.services.scan_service.enqueue_scan_id", return_value=True)
+def test_create_headers_scan_api(mock_enqueue):
+    header_sample = "From: Bob <bob@example.com>\nSubject: Hello"
+    res = client.post(
+        "/api/v1/scans",
+        json={"input_type": "headers", "data": header_sample},
+    )
+    assert res.status_code == 201
+    scan = res.json()
+    assert scan["type"] == "HEADERS"
+    assert scan["id"].startswith("CG-")
+
+
 def test_frontend_compat_scan():
     async def mock_execute(db, scan_id):
         s = db.query(Scan).filter(Scan.id == scan_id).first()

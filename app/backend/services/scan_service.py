@@ -26,6 +26,15 @@ class ScanService:
             # If raw string
             first_line = str(data).strip().splitlines()[0] if str(data).strip() else "Email"
             return first_line[:200]
+        elif input_type in ("identity", "headers"):
+            for line in str(data).splitlines()[:10]:
+                if line.lower().startswith("from:"):
+                    return line.strip()[:200]
+            first_line = str(data).strip().splitlines()[0] if str(data).strip() else "Email Headers"
+            return first_line[:200]
+        elif input_type == "logs":
+            lines = str(data).strip().splitlines()
+            return f"Log stream ({len(lines)} lines)"
         else:
             clean = str(data).strip()
             return (clean[:60] + "...") if len(clean) > 60 else clean

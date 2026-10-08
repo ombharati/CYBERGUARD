@@ -97,12 +97,12 @@ OFFICIAL_BRAND_DOMAINS: Dict[str, Dict[str, Any]] = {
     "google": {
         "name": "Google",
         "aliases": ["google", "gmail"],
-        "official_domains": {"google.com", "gmail.com", "accounts.google.com"},
+        "official_domains": {"google.com", "gmail.com", "accounts.google.com", "googleapis.com", "gstatic.com", "googleusercontent.com"},
     },
     "amazon": {
         "name": "Amazon",
         "aliases": ["amazon", "aws"],
-        "official_domains": {"amazon.com", "amazon.in", "amazon.co.uk", "aws.amazon.com"},
+        "official_domains": {"amazon.com", "amazon.in", "amazon.co.uk", "aws.amazon.com", "amazonaws.com"},
     },
     "netflix": {
         "name": "Netflix",

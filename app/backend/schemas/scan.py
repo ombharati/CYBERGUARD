@@ -12,8 +12,8 @@ class ScanCreateRequest(BaseModel):
     @classmethod
     def validate_input_type(cls, v: str) -> str:
         clean = v.strip().lower()
-        if clean not in ("url", "email", "content", "logs"):
-            raise ValueError("input_type must be one of: 'url', 'email', 'content', 'logs'")
+        if clean not in ("url", "email", "content", "logs", "identity", "headers"):
+            raise ValueError("input_type must be one of: 'url', 'email', 'content', 'logs', 'identity', 'headers'")
         return clean
 
     @field_validator("data")
