@@ -1,0 +1,510 @@
+/* ==============================================================================
+   CYBERGUARD Frontend — Render Layer (Single Source of Truth)
+   ==============================================================================
+   - Single render() reads store and updates DOM incrementally
+   - Never assigns innerHTML on scan list containers
+   - Maintains Map<id, HTMLElement> of rendered rows
+   ============================================================================== */
+
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+function show(element) {
+  if (element) element.classList.remove("hidden");
+}
+
+function hide(element) {
+  if (element) element.classList.add("hidden");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return "Just now";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(new Date(timestamp));
+  } catch (err) {
+    console.warn("[formatDate] Could not format timestamp:", timestamp, err);
+    return "Recent";
+  }
+}
+
+function getScoreCaption(score) {
+  if (score >= 70) return "High Risk — Immediate Attention";
+  if (score >= 40) return "Suspicious — Further Review Recommended";
+  return "Low Risk — Routine Security Vigilance";
+}
+
+function getRiskColor(classification) {
+  const c = String(classification || "").toLowerCase();
+  if (c.includes("safe") || c.includes("low")) return "var(--safe, #10b981)";
+  if (c.includes("suspicious") || c.includes("medium")) return "var(--warning, #f59e0b)";
+  if (c.includes("queued") || c.includes("processing")) return "var(--accent, #6366f1)";
+  return "var(--high, #ef4444)";
+}
+
+function getStatusClass(classification) {
+  const c = String(classification || "").toLowerCase();
+  if (c.includes("safe") || c.includes("low")) return "severity-low";
+  if (c.includes("suspicious") || c.includes("medium")) return "severity-medium";
+  if (c.includes("queued") || c.includes("processing")) return "severity-low";
+  return "severity-high";
+}
+
+function getFilterClass(classification) {
+  const c = String(classification || "").toLowerCase();
+  if (c.includes("safe")) return "safe";
+  if (c.includes("suspicious")) return "suspicious";
+  return "high";
+}
+
+function getDisplayTarget(scan) {
+  if (!scan || !scan.target) return "Unknown target";
+  return String(scan.target)
+    .replace(/^From:\s*/i, "")
+    .split("\n")[0]
+    .slice(0, 80);
+}
+
+function getSeverityClass(severity) {
+  const s = String(severity || "").toLowerCase();
+  if (s === "high") return "severity-high";
+  if (s === "medium") return "severity-medium";
+  return "severity-low";
+}
+
+/* -----------------------------
+   ROW MAPS (INCREMENTAL DOM)
+----------------------------- */
+const recentRowMap = new Map();
+const historyRowMap = new Map();
+
+function updateRecentRowElement(row, scan) {
+  row.dataset.scanId = scan.id;
+
+  let main = row.querySelector(".recent-main");
+  if (!main) {
+    main = document.createElement("div");
+    main.className = "recent-main";
+    main.innerHTML = `<strong></strong><span></span>`;
+    row.appendChild(main);
+  }
+  const strong = main.querySelector("strong");
+  const span = main.querySelector("span");
+  if (strong) strong.textContent = getDisplayTarget(scan);
+  if (span) span.textContent = `${scan.type} · ${formatDate(scan.timestamp)}`;
+
+  let statusLabel = row.querySelector(".status-label");
+  if (!statusLabel) {
+    statusLabel = document.createElement("span");
+    statusLabel.className = "status-label";
+    row.appendChild(statusLabel);
+  }
+  statusLabel.className = `status-label ${getStatusClass(scan.classification)}`;
+  statusLabel.textContent = scan.classification || (scan.status === "processing" ? "Analyzing" : "Queued");
+
+  let scoreSmall = row.querySelector(".score-small");
+  if (!scoreSmall) {
+    scoreSmall = document.createElement("span");
+    scoreSmall.className = "score-small";
+    row.appendChild(scoreSmall);
+  }
+  scoreSmall.textContent = scan.status === "completed" ? `${scan.score}/100` : "—";
+
+  let button = row.querySelector(".open-report-button");
+  if (!button) {
+    button = document.createElement("button");
+    button.className = "open-report-button";
+    button.type = "button";
+    button.textContent = "Open report →";
+    row.appendChild(button);
+  }
+  button.dataset.reportId = scan.id;
+}
+
+function renderRecentScansIncremental(scanList) {
+  const container = $("#recent-scans");
+  if (!container) return;
+
+  const currentScans = scanList.slice(0, 5);
+  if (currentScans.length === 0) {
+    if (!container.querySelector(".no-scans-item")) {
+      container.innerHTML = `
+        <div class="recent-item no-scans-item">
+          <div class="recent-main">
+            <strong>No scans yet</strong>
+            <span>Your latest analysis will appear here.</span>
+          </div>
+        </div>
+      `;
+      recentRowMap.clear();
+    }
+    return;
+  }
+
+  const placeholder = container.querySelector(".no-scans-item");
+  if (placeholder) placeholder.remove();
+
+  const currentIds = new Set(currentScans.map((s) => s.id));
+  for (const [id, element] of recentRowMap.entries()) {
+    if (!currentIds.has(id)) {
+      element.remove();
+      recentRowMap.delete(id);
+    }
+  }
+
+  currentScans.forEach((scan, index) => {
+    let row = recentRowMap.get(scan.id);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "recent-item";
+      recentRowMap.set(scan.id, row);
+    }
+    updateRecentRowElement(row, scan);
+
+    const childAtIndex = container.children[index];
+    if (childAtIndex !== row) {
+      container.insertBefore(row, childAtIndex || null);
+    }
+  });
+}
+
+function updateHistoryRowElement(row, scan) {
+  row.dataset.scanId = scan.id;
+
+  let targetDiv = row.querySelector(".history-target");
+  if (!targetDiv) {
+    targetDiv = document.createElement("div");
+    targetDiv.className = "history-target";
+    targetDiv.innerHTML = `<strong></strong><span></span>`;
+    row.appendChild(targetDiv);
+  }
+  const strong = targetDiv.querySelector("strong");
+  const span = targetDiv.querySelector("span");
+  if (strong) strong.textContent = getDisplayTarget(scan);
+  if (span) span.textContent = scan.id;
+
+  let labelDiv = row.querySelector(".history-cell-label");
+  if (!labelDiv) {
+    labelDiv = document.createElement("div");
+    labelDiv.className = "history-cell-label";
+    row.appendChild(labelDiv);
+  }
+  labelDiv.textContent = scan.type;
+
+  let scoreDiv = row.querySelector(".score-small");
+  if (!scoreDiv) {
+    scoreDiv = document.createElement("div");
+    scoreDiv.className = "score-small";
+    row.appendChild(scoreDiv);
+  }
+  scoreDiv.textContent = scan.status === "completed" ? `${scan.score}/100` : "—";
+
+  let statusDiv = row.querySelector(".status-label");
+  if (!statusDiv) {
+    statusDiv = document.createElement("div");
+    statusDiv.className = "status-label";
+    row.appendChild(statusDiv);
+  }
+  statusDiv.className = `status-label ${getStatusClass(scan.classification)}`;
+  statusDiv.textContent = scan.classification || (scan.status === "processing" ? "Analyzing" : "Queued");
+
+  let actionBtn = row.querySelector(".history-action");
+  if (!actionBtn) {
+    actionBtn = document.createElement("button");
+    actionBtn.className = "history-action";
+    actionBtn.type = "button";
+    actionBtn.textContent = "Report →";
+    row.appendChild(actionBtn);
+  }
+  actionBtn.dataset.reportId = scan.id;
+}
+
+function renderHistoryIncremental(scanList, currentFilter) {
+  const container = $("#history-list");
+  if (!container) return;
+
+  const filtered =
+    currentFilter === "all"
+      ? scanList
+      : scanList.filter(
+          (scan) => getFilterClass(scan.classification) === currentFilter
+        );
+
+  if (!filtered.length) {
+    if (!container.querySelector(".no-history-item")) {
+      container.innerHTML = `
+        <div class="history-row no-history-item">
+          <div class="history-target">
+            <strong>No matching scans</strong>
+            <span>Run a new analysis to add a result here.</span>
+          </div>
+        </div>
+      `;
+      historyRowMap.clear();
+    }
+    return;
+  }
+
+  const placeholder = container.querySelector(".no-history-item");
+  if (placeholder) placeholder.remove();
+
+  const currentIds = new Set(filtered.map((s) => s.id));
+  for (const [id, element] of historyRowMap.entries()) {
+    if (!currentIds.has(id)) {
+      element.remove();
+      historyRowMap.delete(id);
+    }
+  }
+
+  filtered.forEach((scan, index) => {
+    let row = historyRowMap.get(scan.id);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "history-row";
+      historyRowMap.set(scan.id, row);
+    }
+    updateHistoryRowElement(row, scan);
+
+    const childAtIndex = container.children[index];
+    if (childAtIndex !== row) {
+      container.insertBefore(row, childAtIndex || null);
+    }
+  });
+}
+
+function renderFinding(finding) {
+  return `
+    <article class="finding">
+      <div class="finding-top">
+        <span class="finding-severity ${getSeverityClass(finding.severity)}">
+          ${escapeHtml(finding.severity)}
+        </span>
+      </div>
+      <h4>${escapeHtml(finding.title)}</h4>
+      <p>${escapeHtml(finding.description)}</p>
+    </article>
+  `;
+}
+
+function renderSignal(signal) {
+  return `
+    <div class="signal-row">
+      <span class="signal-name">${escapeHtml(signal.name)}</span>
+      <div class="signal-meter">
+        <div class="signal-fill" style="width: ${Math.min(100, Math.max(0, signal.value || 0))}%"></div>
+      </div>
+      <span class="signal-val">${signal.value || 0}%</span>
+    </div>
+  `;
+}
+
+function renderReportCard(scan) {
+  if (!scan) return;
+  const targetElem = $("#report-target");
+  if (targetElem) targetElem.textContent = scan.target || "N/A";
+
+  const typeElem = $("#report-type");
+  if (typeElem) typeElem.textContent = scan.type || "N/A";
+
+  const timeElem = $("#report-timestamp");
+  if (timeElem) timeElem.textContent = formatDate(scan.timestamp);
+
+  const scoreElem = $("#report-score");
+  if (scoreElem) scoreElem.textContent = `${scan.score ?? 0}/100`;
+
+  const classElem = $("#report-classification");
+  if (classElem) {
+    classElem.textContent = scan.classification || "Unknown";
+    classElem.className = `status-label ${getStatusClass(scan.classification)}`;
+  }
+
+  const modelBadge = $("#report-model-badge");
+  if (modelBadge) {
+    if (scan.report_generated_by === "qwen") {
+      modelBadge.textContent = "AI Narrative (Qwen System 2 GPU)";
+      modelBadge.className = "report-badge ai-badge";
+    } else {
+      modelBadge.textContent = "Deterministic Template Report";
+      modelBadge.className = "report-badge template-badge";
+    }
+  }
+
+  const contentElem = $("#report-content");
+  if (contentElem) {
+    contentElem.textContent = scan.report_text || "Report pending or unavailable.";
+  }
+}
+
+/* -----------------------------
+   CENTRAL RENDER FUNCTION
+   - Pure function of store state
+   - Reads store, updates DOM incrementally
+   - Never assigns innerHTML on the full scan list
+----------------------------- */
+function render() {
+  const currentStore = window.store ? window.store.state : state;
+  const scansArray = Array.from(currentStore.scans.values());
+
+  // 1. Connection status pill
+  const pillText = $("#connection-text");
+  const pillDot = $("#connection-dot");
+  if (pillText && pillDot) {
+    if (currentStore.connection === "online") {
+      if (currentStore.health === "degraded") {
+        pillText.textContent = "Degraded";
+        pillDot.className = "state-dot reconnecting";
+      } else {
+        pillText.textContent = "Online";
+        pillDot.className = "state-dot online";
+      }
+    } else if (currentStore.connection === "reconnecting") {
+      pillText.textContent = "Reconnecting…";
+      pillDot.className = "state-dot reconnecting";
+    } else {
+      pillText.textContent = "Offline";
+      pillDot.className = "state-dot offline";
+    }
+  }
+
+  // 2. Error box
+  const errorBox = $("#error-box");
+  if (errorBox) {
+    if (currentStore.error) {
+      errorBox.textContent = currentStore.error;
+      show(errorBox);
+    } else {
+      hide(errorBox);
+    }
+  }
+
+  // 3. Navigation View
+  $$(".view").forEach((v) => v.classList.remove("active-view"));
+  $(`#view-${currentStore.currentView}`)?.classList.add("active-view");
+
+  $$(".nav-link").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === currentStore.currentView);
+  });
+
+  // 4. Input Mode tabs & panels
+  $$(".mode-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.mode === currentStore.currentMode);
+  });
+  $$(".mode-panel").forEach((panel) => panel.classList.remove("active-panel"));
+  $(`#panel-${currentStore.currentMode}`)?.classList.add("active-panel");
+
+  // 5. Active Result / Progress Presentation
+  const activeScan = currentStore.scans.get(currentStore.activeScanId);
+  const resultCard = $("#result-card");
+  const progressCard = $("#progress-card");
+  const reportCard = $("#report-card");
+
+  if (!activeScan) {
+    hide(progressCard);
+    hide(resultCard);
+    hide(reportCard);
+  } else if (activeScan.status === "queued" || activeScan.status === "processing") {
+    // Show non-blocking progress card
+    show(progressCard);
+    hide(resultCard);
+    hide(reportCard);
+
+    const progressTime = $("#progress-time");
+    if (progressTime) {
+      progressTime.textContent = activeScan.status === "processing" ? "Analyzing" : "Queued";
+    }
+
+    // Step indicators
+    const steps = $$(".analysis-step");
+    steps.forEach((step, idx) => {
+      const isCurrent = activeScan.status === "queued" ? idx === 0 : idx === 1;
+      step.classList.toggle("current", isCurrent);
+      const stateText = step.querySelector(".step-state");
+      if (stateText) {
+        if (activeScan.status === "queued") {
+          stateText.textContent = idx === 0 ? "Queued" : "Waiting";
+        } else {
+          stateText.textContent = idx === 0 ? "Done" : idx === 1 ? "Working" : "Waiting";
+        }
+      }
+    });
+  } else {
+    // Terminal state: show result card
+    hide(progressCard);
+    show(resultCard);
+
+    $("#result-title").textContent =
+      activeScan.classification === "Safe"
+        ? "No major warning signs found."
+        : activeScan.classification === "Suspicious"
+          ? "Suspicious activity detected."
+          : activeScan.classification === "Failed"
+            ? "Scan analysis encountered an error."
+            : "High-risk activity detected.";
+
+    $("#result-summary").textContent = activeScan.summary || "";
+    $("#result-score").textContent = activeScan.score ?? 0;
+
+    const badge = $("#result-badge");
+    if (badge) {
+      badge.textContent = activeScan.classification || "Completed";
+      badge.className = "risk-badge";
+      if (activeScan.classification === "Safe") {
+        badge.classList.add("risk-safe");
+      } else if (activeScan.classification === "Suspicious") {
+        badge.classList.add("risk-suspicious");
+      } else {
+        badge.classList.add("risk-high");
+      }
+    }
+
+    const ring = $("#score-ring");
+    if (ring) {
+      ring.style.setProperty("--score-deg", `${(activeScan.score ?? 0) * 3.6}deg`);
+      ring.style.setProperty("--score-color", getRiskColor(activeScan.classification));
+    }
+
+    $("#score-caption").textContent = getScoreCaption(activeScan.score ?? 0);
+
+    const findings = activeScan.findings || [];
+    $("#finding-count").textContent = `${findings.length} finding${findings.length === 1 ? "" : "s"}`;
+    $("#findings-list").innerHTML = findings.map(renderFinding).join("");
+
+    const signals = activeScan.signals || [];
+    $("#signals-list").innerHTML = signals.map(renderSignal).join("");
+
+    const resId = $("#result-id");
+    if (resId) resId.textContent = activeScan.id;
+    const resType = $("#result-type");
+    if (resType) resType.textContent = activeScan.type;
+    const resTime = $("#result-time");
+    if (resTime) resTime.textContent = formatDate(activeScan.timestamp);
+
+    const explanationEl = $("#result-explanation");
+    if (explanationEl) {
+      explanationEl.textContent = activeScan.explanation || activeScan.summary || "No specific threat explanation generated.";
+    }
+
+    // Report card if open
+    if (reportCard && !reportCard.classList.contains("hidden")) {
+      renderReportCard(activeScan);
+    }
+  }
+
+  // 6. Incremental scan lists
+  renderRecentScansIncremental(scansArray);
+  renderHistoryIncremental(scansArray, currentStore.currentFilter);
+}
+
+window.render = render;
+window.renderReportCard = renderReportCard;
