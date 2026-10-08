@@ -146,6 +146,16 @@ function getCurrentInputData() {
       if (!val) throw new Error("Please enter text or message content to inspect.");
       return val;
     }
+    case "identity": {
+      const val = $("#identity-input")?.value?.trim() || "";
+      if (!val) throw new Error("Please paste email headers to analyze.");
+      return val;
+    }
+    case "logs": {
+      const val = $("#logs-input")?.value?.trim() || "";
+      if (!val) throw new Error("Please paste authentication or system logs to analyze.");
+      return val;
+    }
     default:
       throw new Error("Unknown analysis mode selected.");
   }
@@ -162,6 +172,10 @@ function clearCurrentInput() {
   if (bodyIn) bodyIn.value = "";
   const contIn = $("#content-input");
   if (contIn) contIn.value = "";
+  const identIn = $("#identity-input");
+  if (identIn) identIn.value = "";
+  const logsIn = $("#logs-input");
+  if (logsIn) logsIn.value = "";
 }
 
 /* -----------------------------
@@ -310,6 +324,56 @@ $("#sample-email")?.addEventListener("click", () => {
 $("#sample-content")?.addEventListener("click", () => {
   const cont = $("#content-input");
   if (cont) cont.value = "Your wire transfer has been put on hold. Call immediately or click the secure link to release funds: http://wire-transfer-hold.com/auth";
+});
+
+$("#sample-identity-spoofed")?.addEventListener("click", () => {
+  const ident = $("#identity-input");
+  if (ident) {
+    ident.value = `Received: from mail.attacker-spoof.net (198.51.100.22) by mx.corp.com
+Authentication-Results: mx.corp.com; spf=fail (sender 198.51.100.22 not permitted); dkim=fail; dmarc=fail
+From: "Microsoft Security Center" <alert@microsoft-security-verify.com>
+Reply-To: phisher@attacker.org
+Return-Path: <bounce@unrelated-server.net>
+Subject: Critical Security Notice: Verify your Microsoft 365 Account Immediately
+Date: Wed, 08 Oct 2026 10:05:00 +0000`;
+  }
+});
+
+$("#sample-identity-bec")?.addEventListener("click", () => {
+  const ident = $("#identity-input");
+  if (ident) {
+    ident.value = `Received: from mail.legitcorp.com (192.0.2.10) by mx.destination.com
+Authentication-Results: mx.destination.com; spf=pass; dkim=pass; dmarc=pass
+From: "John Doe - Director of Finance" <john.doe@legitcorp.com>
+Reply-To: john.doe.offshore.account@consultant-invoicing.net
+Return-Path: <john.doe@legitcorp.com>
+Subject: Urgent: Updated Vendor Wire Routing Instructions
+Date: Wed, 08 Oct 2026 10:10:00 +0000`;
+  }
+});
+
+$("#sample-logs-burst")?.addEventListener("click", () => {
+  const logs = $("#logs-input");
+  if (logs) {
+    logs.value = `Jan 15 09:15:01 host sshd[101]: Failed password for admin from 198.51.100.44 port 22 ssh2
+Jan 15 09:15:10 host sshd[102]: Failed password for admin from 198.51.100.44 port 22 ssh2
+Jan 15 09:15:22 host sshd[103]: Failed password for admin from 198.51.100.44 port 22 ssh2
+Jan 15 09:15:35 host sshd[104]: Failed password for admin from 198.51.100.44 port 22 ssh2
+Jan 15 09:15:48 host sshd[105]: Failed password for admin from 198.51.100.44 port 22 ssh2
+Jan 15 09:16:02 host sshd[106]: Failed password for admin from 198.51.100.44 port 22 ssh2
+Jan 15 09:16:15 host sshd[107]: Failed password for admin from 198.51.100.44 port 22 ssh2`;
+  }
+});
+
+$("#sample-logs-spray")?.addEventListener("click", () => {
+  const logs = $("#logs-input");
+  if (logs) {
+    logs.value = `Jan 15 10:01:00 auth-server sshd[201]: Failed password for alice from 203.0.113.88 port 22 ssh2
+Jan 15 10:02:15 auth-server sshd[202]: Failed password for bob from 203.0.113.88 port 22 ssh2
+Jan 15 10:03:30 auth-server sshd[203]: Failed password for charlie from 203.0.113.88 port 22 ssh2
+Jan 15 10:04:45 auth-server sshd[204]: Failed password for devops from 203.0.113.88 port 22 ssh2
+Jan 15 10:05:50 auth-server sshd[205]: Failed password for root from 203.0.113.88 port 22 ssh2`;
+  }
 });
 
 $("#new-analysis")?.addEventListener("click", () => {

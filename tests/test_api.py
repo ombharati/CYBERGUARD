@@ -153,6 +153,9 @@ def test_frontend_static_serving():
     res = client.get("/")
     assert res.status_code == 200
     assert "CYBERGUARD" in res.text or "<!DOCTYPE html>" in res.text
+    dash_res = client.get("/js/dashboard.js")
+    assert dash_res.status_code == 200
+    assert "renderCommandDashboard" in dash_res.text
 
 
 def test_scan_report_download_and_preview():

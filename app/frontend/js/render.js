@@ -602,6 +602,11 @@ function render() {
   // 6. Incremental scan lists
   renderRecentScansIncremental(scansArray);
   renderHistoryIncremental(scansArray, currentStore.currentFilter);
+
+  // 7. Command Dashboard
+  if (typeof renderCommandDashboard === "function") {
+    renderCommandDashboard(scansArray);
+  }
 }
 
 window.render = render;

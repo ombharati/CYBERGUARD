@@ -21,32 +21,206 @@ const state = {
 
 function createDefaultScans() {
   const map = new Map();
-  const initScan = {
-    id: "CG-INIT001",
-    type: "URL",
-    target: "https://example.com",
-    status: "completed",
-    score: 12,
-    classification: "Safe",
-    summary: "The URL does not show strong suspicious indicators in baseline analysis.",
-    findings: [
-      {
-        severity: "low",
-        title: "Clean Structural Inspection",
-        description: "First-pass deterministic URL inspection found no overt structural red flags."
-      }
-    ],
-    signals: [
-      { name: "Pattern analysis", value: 12 },
-      { name: "Content indicators", value: 10 },
-      { name: "Risk aggregation", value: 12 }
-    ],
-    explanation: "No malicious indicators were triggered during deterministic inspection.",
-    report_text: "1. What was analyzed\nInput type: URL\nTarget: https://example.com\n\n2. Verdict\nSafe (12/100)\n\n3. Key findings\nClean Structural Inspection",
-    report_generated_by: "template",
-    timestamp: new Date().toISOString()
-  };
-  map.set(initScan.id, initScan);
+  const now = Date.now();
+
+  const samples = [
+    {
+      id: "CG-SEC001",
+      type: "LOGS",
+      target: "SSH Auth Perimeter (198.51.100.44)",
+      status: "completed",
+      score: 88,
+      classification: "Critical",
+      summary: "High-frequency failed authentication burst (8 attempts in 90 seconds) targeting admin user.",
+      findings: [
+        {
+          severity: "high",
+          title: "Failed Login Burst (8 attempts / 90s)",
+          description: "Rapid credential brute-forcing detected from external IP 198.51.100.44.",
+          category: "log_anomaly",
+          signal_type: "failed_login_burst",
+          weight: 40,
+          evidence: "8 failed attempts for admin from 198.51.100.44 in 90s",
+          source: "deterministic"
+        }
+      ],
+      signals: [
+        { name: "Pattern analysis", value: 88 },
+        { name: "Content indicators", value: 75 },
+        { name: "Risk aggregation", value: 88 },
+        { name: "Reputation signals", value: 65 }
+      ],
+      explanation: "Volumetric authentication failures from an untrusted source IP indicating targeted automated brute-force.",
+      recommended_actions: [
+        "Lock the targeted account",
+        "Block the source IP at edge firewall",
+        "Force MFA re-enrollment",
+        "Notify the SOC"
+      ],
+      incident_status: "open",
+      timestamp: new Date(now - 1000 * 60 * 25).toISOString()
+    },
+    {
+      id: "CG-SEC002",
+      type: "IDENTITY",
+      target: "alert@microsoft-security-verify.com",
+      status: "completed",
+      score: 85,
+      classification: "High",
+      summary: "Spoofed inbound identity: SPF failure and display name impersonating Microsoft Security Center.",
+      findings: [
+        {
+          severity: "high",
+          title: "Email Authentication Failure (SPF=fail)",
+          description: "Inbound SPF check rejected sending IP 198.51.100.22 as unauthorized for Microsoft.",
+          category: "identity",
+          signal_type: "spf_fail",
+          weight: 35,
+          evidence: "Authentication-Results: spf=fail (sender 198.51.100.22 not permitted)",
+          source: "deterministic"
+        },
+        {
+          severity: "high",
+          title: "Brand Lookalike Domain Impersonation (Microsoft)",
+          description: "Domain mimics Microsoft brand without matching official registration.",
+          category: "identity",
+          signal_type: "lookalike_domain",
+          weight: 35,
+          evidence: "From: 'Microsoft Security Center' <alert@microsoft-security-verify.com>",
+          source: "deterministic"
+        }
+      ],
+      signals: [
+        { name: "Pattern analysis", value: 85 },
+        { name: "Content indicators", value: 80 },
+        { name: "Risk aggregation", value: 85 }
+      ],
+      explanation: "Critical identity spoofing: sender forged Microsoft security brand with failed cryptographic SPF.",
+      recommended_actions: [
+        "Block the sender domain at gateway",
+        "Quarantine related emails across mailboxes",
+        "Warn the recipient",
+        "Report to brand protection"
+      ],
+      incident_status: "open",
+      timestamp: new Date(now - 1000 * 60 * 120).toISOString()
+    },
+    {
+      id: "CG-SEC003",
+      type: "URL",
+      target: "https://paypaI-security-update.com/login",
+      status: "completed",
+      score: 92,
+      classification: "Critical",
+      summary: "Punycode brand impersonation and sensitive credential harvesting path targeting PayPal.",
+      findings: [
+        {
+          severity: "high",
+          title: "Brand Lookalike Impersonation (PayPal)",
+          description: "Registered domain mimics PayPal with homograph substitution.",
+          category: "heuristic",
+          signal_type: "lookalike_domain",
+          weight: 35,
+          evidence: "paypaI-security-update.com mimics paypal.com",
+          source: "deterministic"
+        },
+        {
+          severity: "high",
+          title: "Sensitive Path on Lookalike Host",
+          description: "/login path present on unauthorized lookalike domain.",
+          category: "heuristic",
+          signal_type: "credential_harvesting",
+          weight: 25,
+          evidence: "/login",
+          source: "deterministic"
+        }
+      ],
+      signals: [
+        { name: "Pattern analysis", value: 92 },
+        { name: "Content indicators", value: 90 },
+        { name: "Risk aggregation", value: 92 }
+      ],
+      explanation: "Active phishing infrastructure mimicking financial services login portal.",
+      recommended_actions: [
+        "Block the URL at the gateway",
+        "Quarantine related emails",
+        "Warn the user",
+        "Report to brand protection"
+      ],
+      incident_status: "investigating",
+      timestamp: new Date(now - 1000 * 60 * 360).toISOString()
+    },
+    {
+      id: "CG-SEC004",
+      type: "EMAIL",
+      target: "Urgent: Wire Routing Instructions (john.doe@legitcorp.com)",
+      status: "completed",
+      score: 55,
+      classification: "Medium",
+      summary: "Executive persona with mismatched Reply-To routing diverting to external inbox.",
+      findings: [
+        {
+          severity: "medium",
+          title: "Reply-To Routing Mismatch",
+          description: "Replies diverted to offshore invoicing consultant address.",
+          category: "identity",
+          signal_type: "reply_to_mismatch",
+          weight: 25,
+          evidence: "Reply-To: john.doe.offshore@consultant-invoicing.net",
+          source: "deterministic"
+        }
+      ],
+      signals: [
+        { name: "Pattern analysis", value: 55 },
+        { name: "Content indicators", value: 50 },
+        { name: "Risk aggregation", value: 55 }
+      ],
+      explanation: "BEC indicators detected: corporate domain matches From header but response vector is diverted.",
+      recommended_actions: [
+        "Warn recipient of diverted Reply-To destination",
+        "Conduct out-of-band identity verification with sender",
+        "Monitor mailbox rules"
+      ],
+      incident_status: "investigating",
+      timestamp: new Date(now - 1000 * 60 * 720).toISOString()
+    },
+    {
+      id: "CG-SEC005",
+      type: "URL",
+      target: "https://google.com/search?q=cybersecurity",
+      status: "completed",
+      score: 10,
+      classification: "Safe",
+      summary: "Verified legitimate Google domain with standard search parameters.",
+      findings: [
+        {
+          severity: "low",
+          title: "Verified Official Domain (Google)",
+          description: "Host belongs to authenticated official Google infrastructure.",
+          category: "heuristic",
+          signal_type: "clean_url",
+          weight: 0,
+          evidence: "google.com is verified official",
+          source: "deterministic"
+        }
+      ],
+      signals: [
+        { name: "Pattern analysis", value: 10 },
+        { name: "Content indicators", value: 8 },
+        { name: "Risk aggregation", value: 10 }
+      ],
+      explanation: "Legitimate domain verified against official registry. Zero threats detected.",
+      recommended_actions: [
+        "No containment required; verified legitimate security baseline"
+      ],
+      incident_status: "resolved",
+      timestamp: new Date(now - 1000 * 60 * 1440).toISOString()
+    }
+  ];
+
+  for (const s of samples) {
+    map.set(s.id, s);
+  }
   return map;
 }
 

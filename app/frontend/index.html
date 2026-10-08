@@ -21,6 +21,7 @@
 
       <nav class="nav">
         <button class="nav-link active" data-view="analyze" type="button">Analyze</button>
+        <button class="nav-link" data-view="dashboard" type="button">Dashboard</button>
         <button class="nav-link" data-view="history" type="button">History</button>
         <button class="nav-link" data-view="about" type="button">About</button>
       </nav>
@@ -68,6 +69,16 @@
             <button class="mode-tab" data-mode="email" role="tab" aria-selected="false" aria-controls="panel-email" type="button" aria-label="Email analysis mode">
               <span class="tab-icon">✉</span>
               Email
+            </button>
+
+            <button class="mode-tab" data-mode="identity" role="tab" aria-selected="false" aria-controls="panel-identity" type="button" aria-label="Identity and headers analysis mode">
+              <span class="tab-icon">🛡</span>
+              Identity / Headers
+            </button>
+
+            <button class="mode-tab" data-mode="logs" role="tab" aria-selected="false" aria-controls="panel-logs" type="button" aria-label="Log analysis mode">
+              <span class="tab-icon">📋</span>
+              Logs
             </button>
 
             <button class="mode-tab" data-mode="content" role="tab" aria-selected="false" aria-controls="panel-content" type="button" aria-label="Content analysis mode">
@@ -131,6 +142,52 @@
             </p>
           </div>
 
+          <!-- IDENTITY / HEADERS -->
+          <div class="mode-panel" id="panel-identity" role="tabpanel" aria-label="Identity and email header analysis panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label for="identity-input" style="margin: 0;">Raw Email Headers</label>
+              <div style="display: flex; gap: 8px;">
+                <button id="sample-identity-spoofed" class="secondary-button" style="padding: 4px 10px; font-size: 12px;" type="button">
+                  Sample Spoofed
+                </button>
+                <button id="sample-identity-bec" class="secondary-button" style="padding: 4px 10px; font-size: 12px;" type="button">
+                  Sample BEC
+                </button>
+              </div>
+            </div>
+            <textarea
+              id="identity-input"
+              rows="10"
+              placeholder="Paste raw email header block (Received, Authentication-Results, From, Reply-To, etc.)..."
+            ></textarea>
+            <p class="field-help">
+              Evaluates SPF/DKIM/DMARC alignment, display name spoofing, Reply-To diversion, free-webmail corporate roles, and relay hops.
+            </p>
+          </div>
+
+          <!-- LOGS -->
+          <div class="mode-panel" id="panel-logs" role="tabpanel" aria-label="Log analysis panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label for="logs-input" style="margin: 0;">Authentication or System Logs</label>
+              <div style="display: flex; gap: 8px;">
+                <button id="sample-logs-burst" class="secondary-button" style="padding: 4px 10px; font-size: 12px;" type="button">
+                  Sample Failed Burst
+                </button>
+                <button id="sample-logs-spray" class="secondary-button" style="padding: 4px 10px; font-size: 12px;" type="button">
+                  Sample Spray Attack
+                </button>
+              </div>
+            </div>
+            <textarea
+              id="logs-input"
+              rows="10"
+              placeholder="Paste Linux auth.log lines, generic syslog, or structured JSON log events (up to 1MB)..."
+            ></textarea>
+            <p class="field-help">
+              Detects brute-force bursts (>5 fails/5m), password spraying (>3 users/10m), impossible travel, off-hours access, new admin accounts, and SSH keys.
+            </p>
+          </div>
+
           <!-- CONTENT -->
           <div class="mode-panel" id="panel-content" role="tabpanel" aria-label="Content analysis panel">
             <label for="content-input">Content to analyze</label>
@@ -140,7 +197,7 @@
               placeholder="Paste suspicious text, a message, or other content here..."
             ></textarea>
             <p class="field-help">
-              CYBERGUARD can later be extended with specialized analysis for different content types.
+              CYBERGUARD evaluates content indicators, urgency, credentials, and embedded URLs.
             </p>
           </div>
 
@@ -406,6 +463,21 @@
       </div>
     </section>
 
+    <!-- COMMAND DASHBOARD VIEW -->
+    <section id="view-dashboard" class="view">
+      <div class="page-shell">
+        <div class="intro">
+          <div class="eyebrow">COMMAND CENTER</div>
+          <h1>Security Operations & Command Dashboard</h1>
+          <p>
+            Real-time multi-vector telemetry, threat severity distribution, attack timeline, frequently targeted enterprise assets, and incident triage.
+          </p>
+        </div>
+
+        <div id="dash-container" class="dash-container"></div>
+      </div>
+    </section>
+
     <!-- HISTORY VIEW -->
     <section id="view-history" class="view">
       <div class="page-shell">
@@ -532,6 +604,7 @@
   </footer>
 
   <script src="js/store.js"></script>
+  <script src="js/dashboard.js"></script>
   <script src="js/render.js"></script>
   <script src="js/scheduler.js"></script>
   <script src="script.js"></script>
