@@ -17,7 +17,7 @@ CYBERGUARD follows a layered architecture where each subsystem has a defined res
 │                         API LAYER                            │
 │                         FastAPI                              │
 │                                                             │
-│  Request Validation  │  Routing  │  Error Handling  │ CORS  │
+│ API Key Auth │ Request Validation │ Routing │ Error Handling│
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼
