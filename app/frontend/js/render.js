@@ -377,6 +377,107 @@ function createSignalElement(signal) {
   return row;
 }
 
+function createEvidenceItemElement(finding) {
+  const item = document.createElement("div");
+  item.className = "evidence-item";
+
+  const topMeta = document.createElement("div");
+  topMeta.className = "evidence-top-meta";
+
+  const typeSpan = document.createElement("span");
+  typeSpan.className = "evidence-type-badge";
+  typeSpan.textContent = finding.signal_type || finding.category || "heuristic";
+  topMeta.appendChild(typeSpan);
+
+  const rightGroup = document.createElement("div");
+  rightGroup.style.display = "flex";
+  rightGroup.style.alignItems = "center";
+  rightGroup.style.gap = "8px";
+
+  const srcTag = document.createElement("span");
+  srcTag.className = "evidence-source-tag";
+  srcTag.textContent = finding.source || "deterministic";
+  rightGroup.appendChild(srcTag);
+
+  const sevPill = document.createElement("span");
+  const sev = (finding.severity || "low").toLowerCase();
+  sevPill.className = `dash-sev-pill ${
+    sev === "critical"
+      ? "pill-critical"
+      : sev === "high"
+      ? "pill-high"
+      : sev === "medium"
+      ? "pill-medium"
+      : "pill-safe"
+  }`;
+  sevPill.textContent = (finding.severity || "low").toUpperCase();
+  rightGroup.appendChild(sevPill);
+
+  topMeta.appendChild(rightGroup);
+  item.appendChild(topMeta);
+
+  // Title and description
+  const title = document.createElement("strong");
+  title.style.fontSize = "0.9rem";
+  title.style.color = "#f8fafc";
+  title.textContent = finding.title;
+  item.appendChild(title);
+
+  if (finding.description) {
+    const desc = document.createElement("p");
+    desc.style.fontSize = "0.82rem";
+    desc.style.color = "#94a3b8";
+    desc.style.margin = "0";
+    desc.textContent = finding.description;
+    item.appendChild(desc);
+  }
+
+  // Weight progress bar
+  const weightVal = Number(finding.weight || 0);
+  const weightRow = document.createElement("div");
+  weightRow.className = "evidence-weight-row";
+
+  const weightMeta = document.createElement("div");
+  weightMeta.className = "evidence-weight-meta";
+  weightMeta.innerHTML = `<span>Risk Score Contribution</span><strong>+${weightVal} pts</strong>`;
+  weightRow.appendChild(weightMeta);
+
+  const barBg = document.createElement("div");
+  barBg.className = "evidence-bar-bg";
+  const barFill = document.createElement("div");
+  barFill.className = "evidence-bar-fill";
+  const pct = Math.min(100, Math.max(8, Math.round((weightVal / 45) * 100)));
+  barFill.style.width = `${pct}%`;
+  barBg.appendChild(barFill);
+  weightRow.appendChild(barBg);
+  item.appendChild(weightRow);
+
+  // Triggered Evidence text
+  if (finding.evidence) {
+    const evBlock = document.createElement("div");
+    evBlock.style.display = "flex";
+    evBlock.style.flexDirection = "column";
+    evBlock.style.gap = "4px";
+
+    const evLabel = document.createElement("span");
+    evLabel.style.fontSize = "0.72rem";
+    evLabel.style.fontWeight = "600";
+    evLabel.style.color = "#64748b";
+    evLabel.style.textTransform = "uppercase";
+    evLabel.textContent = "Triggering Evidence Input";
+    evBlock.appendChild(evLabel);
+
+    const evCode = document.createElement("div");
+    evCode.className = "evidence-snippet";
+    evCode.textContent = finding.evidence;
+    evBlock.appendChild(evCode);
+
+    item.appendChild(evBlock);
+  }
+
+  return item;
+}
+
 function renderReportCard(scan) {
   if (!scan) return;
   const targetElem = $("#report-target");
@@ -594,6 +695,20 @@ function render() {
             return label;
           })
         );
+      }
+    }
+
+    // Evidence panel with weights
+    const evidenceList = $("#evidence-panel-content");
+    const evidenceCount = $("#evidence-findings-count");
+    if (evidenceCount) {
+      evidenceCount.textContent = `${findings.length} signal${findings.length === 1 ? "" : "s"}`;
+    }
+    if (evidenceList) {
+      if (findings.length === 0) {
+        evidenceList.innerHTML = `<div class="dash-subnote">No signals triggered for this scan.</div>`;
+      } else {
+        evidenceList.replaceChildren(...findings.map(createEvidenceItemElement));
       }
     }
 

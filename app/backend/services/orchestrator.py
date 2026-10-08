@@ -105,16 +105,28 @@ class ScanOrchestrator:
             # Persist findings with weights and evidence
             db.query(ScanFinding).filter(ScanFinding.scan_id == scan.id).delete()
             for finding in assessment.findings:
+                w = getattr(finding, "weight", 0)
+                if not w:
+                    w = 35 if finding.severity in ("high", "critical") else (20 if finding.severity == "medium" else 5)
+                src = getattr(finding, "source", None) or "deterministic"
+                ev = getattr(finding, "evidence", None) or scan.target
+                sig = getattr(finding, "signal_type", None) or finding.category or "indicator"
+
+                finding.weight = w
+                finding.source = src
+                finding.evidence = ev
+                finding.signal_type = sig
+
                 db_finding = ScanFinding(
                     scan_id=scan.id,
                     severity=finding.severity,
                     title=finding.title,
                     description=finding.description,
                     category=finding.category,
-                    signal_type=finding.signal_type or finding.category,
-                    weight=getattr(finding, "weight", 0),
-                    evidence=getattr(finding, "evidence", None),
-                    source=getattr(finding, "source", "deterministic"),
+                    signal_type=sig,
+                    weight=w,
+                    evidence=ev,
+                    source=src,
                     recommended_actions=getattr(finding, "recommended_actions", []),
                 )
                 db.add(db_finding)

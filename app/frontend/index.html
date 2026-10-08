@@ -330,6 +330,25 @@
                 </div>
                 <div id="recommendations-list" class="recommendations-list"></div>
               </div>
+
+              <!-- EXPANDABLE EVIDENCE PANEL WITH WEIGHTS -->
+              <div class="detail-section evidence-panel-section">
+                <details class="evidence-details" id="evidence-panel-details" open>
+                  <summary class="evidence-summary">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="evidence-toggle-icon">▼</span>
+                        <h3 style="margin: 0; font-size: 0.95rem;">Signal Evidence & Contribution Weights</h3>
+                      </div>
+                      <span id="evidence-findings-count" class="pill-count">0 signals</span>
+                    </div>
+                  </summary>
+
+                  <div id="evidence-panel-content" class="evidence-panel-content">
+                    <!-- Populated dynamically: signal_type, severity, weight bar, evidence text, source -->
+                  </div>
+                </details>
+              </div>
             </div>
           </div>
 

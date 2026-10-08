@@ -34,6 +34,7 @@ tempCodeRunnerFile.py
 *.sqlite3
 *.db
 *.log
+data/
 docker-data/
 postgres_data/
 redis_data/
@@ -60,5 +61,7 @@ CLAUDE.md
 
 # Temporary test outputs & local media
 test_out.json
+test_results*.csv
+results*.csv
 docs/*.png
 
