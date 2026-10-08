@@ -32,17 +32,27 @@ DANGEROUS_EXTENSIONS = {
 
 @dataclass
 class Finding:
-    severity: str  # "low", "medium", "high"
+    severity: str  # "low", "medium", "high", "critical"
     title: str
     description: str
     category: str = "deterministic_url"
+    signal_type: Optional[str] = None
+    weight: int = 0
+    evidence: Optional[str] = None
+    source: str = "deterministic"
+    recommended_actions: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "severity": self.severity,
             "title": self.title,
             "description": self.description,
             "category": self.category,
+            "signal_type": self.signal_type or self.category,
+            "weight": self.weight,
+            "evidence": self.evidence,
+            "source": self.source,
+            "recommended_actions": self.recommended_actions,
         }
 
 

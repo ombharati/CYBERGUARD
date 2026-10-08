@@ -74,6 +74,19 @@ def test_get_nonexistent_scan():
     assert res.status_code == 404
 
 
+@patch("app.backend.services.scan_service.enqueue_scan_id", return_value=True)
+def test_create_logs_scan_api(mock_enqueue):
+    log_sample = "Jan 15 09:00:10 host sshd[101]: Failed password for admin from 10.0.0.1 port 22 ssh2"
+    res = client.post(
+        "/api/v1/scans",
+        json={"input_type": "logs", "data": log_sample},
+    )
+    assert res.status_code == 201
+    scan = res.json()
+    assert scan["type"] == "LOGS"
+    assert scan["id"].startswith("CG-")
+
+
 def test_frontend_compat_scan():
     async def mock_execute(db, scan_id):
         s = db.query(Scan).filter(Scan.id == scan_id).first()

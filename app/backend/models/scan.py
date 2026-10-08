@@ -40,6 +40,7 @@ class Scan(Base):
     signals = Column(JSON, nullable=True, default=list)
     report_text = Column(Text, nullable=True)
     report_generated_by = Column(String(20), nullable=True)  # "qwen" or "template"
+    recommended_actions = Column(JSON, nullable=True, default=list)
     
     # Idempotency key for deduplication
     idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
@@ -89,6 +90,7 @@ class Scan(Base):
             "status": self.status,
             "report_text": self.report_text or "",
             "report_generated_by": self.report_generated_by or "",
+            "recommended_actions": self.recommended_actions or [],
             "timestamp": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -100,10 +102,15 @@ class ScanFinding(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     scan_id = Column(String(36), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True)
     
-    severity = Column(String(10), nullable=False)  # low, medium, high
+    severity = Column(String(10), nullable=False)  # low, medium, high, critical
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
-    category = Column(String(50), nullable=True)  # heuristic, laya, qwen, threat_intel
+    category = Column(String(50), nullable=True)  # heuristic, laya, qwen, threat_intel, log_anomaly
+    signal_type = Column(String(50), nullable=True)
+    weight = Column(Integer, nullable=True, default=0)
+    evidence = Column(Text, nullable=True)
+    source = Column(String(50), nullable=True, default="deterministic")
+    recommended_actions = Column(JSON, nullable=True, default=list)
     
     created_at = Column(
         DateTime(timezone=True),
@@ -120,6 +127,11 @@ class ScanFinding(Base):
             "title": self.title,
             "description": self.description,
             "category": self.category,
+            "signal_type": self.signal_type or self.category,
+            "weight": self.weight or 0,
+            "evidence": self.evidence,
+            "source": self.source or "deterministic",
+            "recommended_actions": self.recommended_actions or [],
         }
 
 

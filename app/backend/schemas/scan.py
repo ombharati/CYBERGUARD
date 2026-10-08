@@ -5,15 +5,15 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class ScanCreateRequest(BaseModel):
-    input_type: str = Field(..., description="'url', 'email', or 'content'")
+    input_type: str = Field(..., description="'url', 'email', 'content', or 'logs'")
     data: Union[str, Dict[str, Any]] = Field(..., description="Target string or email dictionary")
 
     @field_validator("input_type")
     @classmethod
     def validate_input_type(cls, v: str) -> str:
         clean = v.strip().lower()
-        if clean not in ("url", "email", "content"):
-            raise ValueError("input_type must be one of: 'url', 'email', 'content'")
+        if clean not in ("url", "email", "content", "logs"):
+            raise ValueError("input_type must be one of: 'url', 'email', 'content', 'logs'")
         return clean
 
     @field_validator("data")
@@ -23,8 +23,8 @@ class ScanCreateRequest(BaseModel):
             clean = v.strip()
             if not clean:
                 raise ValueError("Data cannot be empty")
-            if len(clean) > 25000:
-                raise ValueError("Input data exceeds maximum allowed length of 25,000 characters")
+            if len(clean) > 1048576:
+                raise ValueError("Input data exceeds maximum allowed length of 1MB (1,048,576 characters)")
             return clean
         elif isinstance(v, dict):
             if not v:
@@ -38,6 +38,11 @@ class FindingResponse(BaseModel):
     title: str
     description: str
     category: Optional[str] = None
+    signal_type: Optional[str] = None
+    weight: Optional[int] = 0
+    evidence: Optional[str] = None
+    source: Optional[str] = "deterministic"
+    recommended_actions: Optional[List[str]] = Field(default_factory=list)
 
 
 class SignalResponse(BaseModel):
@@ -58,6 +63,7 @@ class ScanResponse(BaseModel):
     explanation: str = ""
     report_text: Optional[str] = None
     report_generated_by: Optional[str] = None
+    recommended_actions: List[str] = Field(default_factory=list)
     timestamp: Optional[str] = None
 
 

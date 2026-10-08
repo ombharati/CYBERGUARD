@@ -51,6 +51,8 @@ class ScanOrchestrator:
                 assessment = await self._analyze_url_pipeline(str(raw_data))
             elif input_type == "email":
                 assessment = await self._analyze_email_pipeline(raw_data)
+            elif input_type == "logs":
+                assessment = await self._analyze_logs_pipeline(str(raw_data))
             else:  # content / text
                 assessment = await self._analyze_content_pipeline(str(raw_data))
 
@@ -60,6 +62,14 @@ class ScanOrchestrator:
             scan.summary = assessment.summary
             scan.explanation = assessment.explanation
             scan.signals = assessment.signals
+
+            # Extract recommended actions from findings or response rules
+            rec_actions: List[str] = []
+            for f in assessment.findings:
+                for act in getattr(f, "recommended_actions", []):
+                    if act not in rec_actions:
+                        rec_actions.append(act)
+            scan.recommended_actions = rec_actions
 
             # Instant deterministic 7-section report baseline
             meta = getattr(assessment, "meta", {})
@@ -75,7 +85,7 @@ class ScanOrchestrator:
             scan.report_generated_by = "template"
             scan.status = "completed"
 
-            # Persist findings
+            # Persist findings with weights and evidence
             db.query(ScanFinding).filter(ScanFinding.scan_id == scan.id).delete()
             for finding in assessment.findings:
                 db_finding = ScanFinding(
@@ -84,6 +94,11 @@ class ScanOrchestrator:
                     title=finding.title,
                     description=finding.description,
                     category=finding.category,
+                    signal_type=finding.signal_type or finding.category,
+                    weight=getattr(finding, "weight", 0),
+                    evidence=getattr(finding, "evidence", None),
+                    source=getattr(finding, "source", "deterministic"),
+                    recommended_actions=getattr(finding, "recommended_actions", []),
                 )
                 db.add(db_finding)
 
@@ -382,5 +397,39 @@ class ScanOrchestrator:
             qwen_verdict=qwen_res.get("verdict", ""),
             qwen_legitimate_explanations=qwen_res.get("legitimate_explanations", []),
             qwen_what_would_change_my_mind=qwen_res.get("what_would_change_my_mind", ""),
+            meta=meta,
+        )
+
+    async def _analyze_logs_pipeline(self, raw_logs: str):
+        """Pipeline for raw authentication & system log analysis."""
+        from detection.logs.detector import analyze_logs
+
+        det_result = analyze_logs(raw_logs)
+        all_findings: List[Finding] = list(det_result.findings)
+
+        providers_used = ["Deterministic Auth & Syslog Analyzer"]
+        providers_not_used = [
+            "Laya Neural Decision Engine (URL/Email only)",
+            "External Threat Intel (VirusTotal/URLScan: not applicable to system logs)",
+            "Qwen Deep Semantic Reasoner (GPU Ollama: bypassed for deterministic log stream)"
+        ]
+
+        meta = {
+            "detector_signals": det_result.signals,
+            "providers_used": providers_used,
+            "providers_not_used": providers_not_used,
+        }
+
+        total_lines = det_result.signals.get("total_lines_analyzed", 0)
+        target_display = f"Log Stream ({total_lines} lines)"
+
+        return RiskEngine.calculate_risk(
+            input_type="Logs",
+            target=target_display,
+            detector_signals=det_result.signals,
+            laya_signals={},
+            qwen_signals={},
+            external_intel_signals={},
+            all_findings=all_findings,
             meta=meta,
         )
