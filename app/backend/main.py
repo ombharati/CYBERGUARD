@@ -68,6 +68,23 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """Attach Content-Security-Policy header to prevent XSS vulnerabilities."""
+    response = await call_next(request)
+    if request.url.path in ("/docs", "/redoc", "/openapi.json"):
+        # Swagger UI and ReDoc require CDN assets from jsdelivr for interactive API documentation
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+        )
+    return response
+
+
+
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """System health check endpoint for frontend and container monitors."""

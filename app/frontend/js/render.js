@@ -117,7 +117,10 @@ function updateRecentRowElement(row, scan) {
   if (!main) {
     main = document.createElement("div");
     main.className = "recent-main";
-    main.innerHTML = `<strong></strong><span></span>`;
+    const strong = document.createElement("strong");
+    const span = document.createElement("span");
+    main.appendChild(strong);
+    main.appendChild(span);
     row.appendChild(main);
   }
   const strong = main.querySelector("strong");
@@ -160,14 +163,18 @@ function renderRecentScansIncremental(scanList) {
   const currentScans = scanList.slice(0, 5);
   if (currentScans.length === 0) {
     if (!container.querySelector(".no-scans-item")) {
-      container.innerHTML = `
-        <div class="recent-item no-scans-item">
-          <div class="recent-main">
-            <strong>No scans yet</strong>
-            <span>Your latest analysis will appear here.</span>
-          </div>
-        </div>
-      `;
+      const emptyDiv = document.createElement("div");
+      emptyDiv.className = "recent-item no-scans-item";
+      const main = document.createElement("div");
+      main.className = "recent-main";
+      const strong = document.createElement("strong");
+      strong.textContent = "No scans yet";
+      const span = document.createElement("span");
+      span.textContent = "Your latest analysis will appear here.";
+      main.appendChild(strong);
+      main.appendChild(span);
+      emptyDiv.appendChild(main);
+      container.replaceChildren(emptyDiv);
       recentRowMap.clear();
     }
     return;
@@ -207,7 +214,10 @@ function updateHistoryRowElement(row, scan) {
   if (!targetDiv) {
     targetDiv = document.createElement("div");
     targetDiv.className = "history-target";
-    targetDiv.innerHTML = `<strong></strong><span></span>`;
+    const strong = document.createElement("strong");
+    const span = document.createElement("span");
+    targetDiv.appendChild(strong);
+    targetDiv.appendChild(span);
     row.appendChild(targetDiv);
   }
   const strong = targetDiv.querySelector("strong");
@@ -264,14 +274,18 @@ function renderHistoryIncremental(scanList, currentFilter) {
 
   if (!filtered.length) {
     if (!container.querySelector(".no-history-item")) {
-      container.innerHTML = `
-        <div class="history-row no-history-item">
-          <div class="history-target">
-            <strong>No matching scans</strong>
-            <span>Run a new analysis to add a result here.</span>
-          </div>
-        </div>
-      `;
+      const emptyDiv = document.createElement("div");
+      emptyDiv.className = "history-row no-history-item";
+      const targetDiv = document.createElement("div");
+      targetDiv.className = "history-target";
+      const strong = document.createElement("strong");
+      strong.textContent = "No matching scans";
+      const span = document.createElement("span");
+      span.textContent = "Run a new analysis to add a result here.";
+      targetDiv.appendChild(strong);
+      targetDiv.appendChild(span);
+      emptyDiv.appendChild(targetDiv);
+      container.replaceChildren(emptyDiv);
       historyRowMap.clear();
     }
     return;
@@ -304,30 +318,55 @@ function renderHistoryIncremental(scanList, currentFilter) {
   });
 }
 
-function renderFinding(finding) {
-  return `
-    <article class="finding">
-      <div class="finding-top">
-        <span class="finding-severity ${getSeverityClass(finding.severity)}">
-          ${escapeHtml(finding.severity)}
-        </span>
-      </div>
-      <h4>${escapeHtml(finding.title)}</h4>
-      <p>${escapeHtml(finding.description)}</p>
-    </article>
-  `;
+function createFindingElement(finding) {
+  const article = document.createElement("article");
+  article.className = "finding";
+
+  const top = document.createElement("div");
+  top.className = "finding-top";
+
+  const severitySpan = document.createElement("span");
+  severitySpan.className = `finding-severity ${getSeverityClass(finding.severity)}`;
+  severitySpan.textContent = finding.severity || "info";
+  top.appendChild(severitySpan);
+  article.appendChild(top);
+
+  const h4 = document.createElement("h4");
+  h4.textContent = finding.title || "Untitled Finding";
+  article.appendChild(h4);
+
+  const p = document.createElement("p");
+  p.textContent = finding.description || "";
+  article.appendChild(p);
+
+  return article;
 }
 
-function renderSignal(signal) {
-  return `
-    <div class="signal-row">
-      <span class="signal-name">${escapeHtml(signal.name)}</span>
-      <div class="signal-meter">
-        <div class="signal-fill" style="width: ${Math.min(100, Math.max(0, signal.value || 0))}%"></div>
-      </div>
-      <span class="signal-val">${signal.value || 0}%</span>
-    </div>
-  `;
+function createSignalElement(signal) {
+  const row = document.createElement("div");
+  row.className = "signal-row";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "signal-name";
+  nameSpan.textContent = signal.name || "Signal";
+  row.appendChild(nameSpan);
+
+  const meter = document.createElement("div");
+  meter.className = "signal-meter";
+
+  const fill = document.createElement("div");
+  fill.className = "signal-fill";
+  const val = Math.min(100, Math.max(0, Number(signal.value) || 0));
+  fill.style.width = `${val}%`;
+  meter.appendChild(fill);
+  row.appendChild(meter);
+
+  const valSpan = document.createElement("span");
+  valSpan.className = "signal-val";
+  valSpan.textContent = `${val}%`;
+  row.appendChild(valSpan);
+
+  return row;
 }
 
 function renderReportCard(scan) {
@@ -499,10 +538,17 @@ function render() {
 
     const findings = activeScan.findings || [];
     $("#finding-count").textContent = `${findings.length} finding${findings.length === 1 ? "" : "s"}`;
-    $("#findings-list").innerHTML = findings.map(renderFinding).join("");
+    const findingsList = $("#findings-list");
+    if (findingsList) {
+      findingsList.replaceChildren(...findings.map(createFindingElement));
+    }
 
     const signals = activeScan.signals || [];
-    $("#signals-list").innerHTML = signals.map(renderSignal).join("");
+    const signalsList = $("#signals-list");
+    if (signalsList) {
+      signalsList.replaceChildren(...signals.map(createSignalElement));
+    }
+
 
     const resId = $("#result-id");
     if (resId) resId.textContent = activeScan.id;
