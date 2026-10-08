@@ -540,11 +540,11 @@ function render() {
       }
       if (retryBtn) retryBtn.style.display = "none";
     } else if (currentStore.connection === "reconnecting") {
-      pillText.textContent = "Reconnecting…";
+      pillText.textContent = `Cannot reach API: ${window.API_BASE_URL || 'unknown'}`;
       pillDot.className = "state-dot reconnecting";
-      if (retryBtn) retryBtn.style.display = "none";
+      if (retryBtn) retryBtn.style.display = "inline-flex";
     } else {
-      pillText.textContent = "Offline";
+      pillText.textContent = `Cannot reach API: ${window.API_BASE_URL || 'unknown'}`;
       pillDot.className = "state-dot offline";
       if (retryBtn) retryBtn.style.display = "inline-flex";
     }
@@ -617,46 +617,60 @@ function render() {
     show(resultCard);
 
     const classification = activeScan.classification || "Safe";
-    $("#result-title").textContent =
-      classification === "Critical"
-        ? "Critical security threat detected."
-        : classification === "High"
-          ? "High-risk activity detected."
-          : classification === "Medium" || classification === "Suspicious"
-            ? "Suspicious anomalies detected."
-            : classification === "Low"
-              ? "Low risk: minor indicators noted."
-              : classification === "Failed"
-                ? "Scan analysis encountered an error."
+    const isFailed = activeScan.status === "failed";
+
+    if (isFailed) {
+      $("#result-title").textContent = activeScan.error_message || "Scan analysis encountered an error.";
+      $("#result-summary").textContent = activeScan.summary || "The scan could not be completed.";
+      $("#result-score").textContent = "—";
+      $("#score-caption").textContent = "No result — scan failed";
+    } else {
+      $("#result-title").textContent =
+        classification === "Critical"
+          ? "Critical security threat detected."
+          : classification === "High"
+            ? "High-risk activity detected."
+            : classification === "Medium" || classification === "Suspicious"
+              ? "Suspicious anomalies detected."
+              : classification === "Low"
+                ? "Low risk: minor indicators noted."
                 : "No major warning signs found.";
 
-    $("#result-summary").textContent = activeScan.summary || "";
-    $("#result-score").textContent = activeScan.score ?? 0;
+      $("#result-summary").textContent = activeScan.summary || "";
+      $("#result-score").textContent = activeScan.score ?? 0;
+      $("#score-caption").textContent = getScoreCaption(activeScan.score ?? 0);
+    }
 
     const badge = $("#result-badge");
     if (badge) {
-      badge.textContent = classification || "Completed";
+      badge.textContent = isFailed ? "FAILED" : (classification || "Completed");
       badge.className = "risk-badge";
-      if (classification === "Critical") {
-        badge.classList.add("risk-critical");
-      } else if (classification === "High" || classification === "High Risk") {
-        badge.classList.add("risk-high");
-      } else if (classification === "Medium" || classification === "Suspicious") {
-        badge.classList.add("risk-medium");
-      } else if (classification === "Low") {
-        badge.classList.add("risk-low");
-      } else {
-        badge.classList.add("risk-safe");
+      if (!isFailed) {
+        if (classification === "Critical") badge.classList.add("risk-critical");
+        else if (classification === "High" || classification === "High Risk") badge.classList.add("risk-high");
+        else if (classification === "Medium" || classification === "Suspicious") badge.classList.add("risk-medium");
+        else if (classification === "Low") badge.classList.add("risk-low");
+        else badge.classList.add("risk-safe");
       }
     }
 
     const ring = $("#score-ring");
     if (ring) {
-      ring.style.setProperty("--score-deg", `${(activeScan.score ?? 0) * 3.6}deg`);
-      ring.style.setProperty("--score-color", getRiskColor(activeScan.classification));
+      ring.style.setProperty("--score-deg", isFailed ? "0deg" : `${(activeScan.score ?? 0) * 3.6}deg`);
+      ring.style.setProperty("--score-color", isFailed ? "#666" : getRiskColor(activeScan.classification));
     }
 
-    $("#score-caption").textContent = getScoreCaption(activeScan.score ?? 0);
+    const statusText = $("#result-status-text");
+    if (statusText) statusText.textContent = isFailed ? "Failed" : "Completed";
+
+    const reportBtn = $("#open-report");
+    if (reportBtn) {
+      if (isFailed) {
+        reportBtn.style.display = "none";
+      } else {
+        reportBtn.style.display = "";
+      }
+    }
 
     const findings = activeScan.findings || [];
     $("#finding-count").textContent = `${findings.length} finding${findings.length === 1 ? "" : "s"}`;
@@ -736,7 +750,6 @@ function render() {
   }
 
   // 6. Incremental scan lists
-  renderRecentScansIncremental(scansArray);
   renderHistoryIncremental(scansArray, currentStore.currentFilter);
 
   // 7. Command Dashboard
