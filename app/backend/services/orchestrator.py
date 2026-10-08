@@ -283,17 +283,28 @@ class ScanOrchestrator:
         # 2. Deterministic Email Heuristics
         heuristics = analyze_email_heuristics(parsed)
         all_findings.extend(heuristics["findings"])
-        email_detector_signals = heuristics["signals"]
+        email_detector_signals = dict(heuristics["signals"])
 
-        # 3. URL Extraction & Laya URL Analysis
-        # Laya receives compact URLs only (never entire email body!)
+        # 3. URL Extraction & Deterministic URL Analysis & Laya URL Analysis
+        # Deterministic URL analyzer runs BEFORE Laya on any extracted URLs
         laya_combined_signals: Dict[str, Any] = {}
         top_urls = parsed.extracted_urls[:3]  # Resource conscious: inspect top extracted URLs
         for url in top_urls:
+            # Deterministic URL analyzer runs first
             url_det = analyze_url(url)
             all_findings.extend(url_det.findings)
+            for sig_key, sig_val in url_det.signals.items():
+                if isinstance(sig_val, bool):
+                    email_detector_signals[sig_key] = email_detector_signals.get(sig_key, False) or sig_val
+                elif isinstance(sig_val, (int, float)):
+                    email_detector_signals[sig_key] = max(email_detector_signals.get(sig_key, 0), sig_val)
+                elif isinstance(sig_val, list):
+                    existing_list = email_detector_signals.get(sig_key, [])
+                    email_detector_signals[sig_key] = list(set(existing_list + sig_val))
+                elif sig_key not in email_detector_signals:
+                    email_detector_signals[sig_key] = sig_val
 
-            # Laya URL-only scan
+            # Laya URL-only scan (runs after deterministic URL analysis)
             laya_res = self.laya.analyze_url(url)
             all_findings.extend(laya_res.get("findings", []))
             for k, v in laya_res.get("signals", {}).items():
@@ -316,6 +327,7 @@ class ScanOrchestrator:
         providers_used = ["Email Format & Header Parser", "Deterministic Email Heuristics Engine"]
         providers_not_used = []
         if top_urls:
+            providers_used.append("Deterministic URL Heuristics Detector")
             providers_used.append("Laya Neural URL Engine (CPU ModernBERT)")
         if qwen_res.get("available"):
             providers_used.append("Qwen Semantic Content Reasoner (GPU Ollama)")
@@ -354,12 +366,31 @@ class ScanOrchestrator:
         """Pipeline for raw text / snippet content analysis."""
         all_findings: List[Finding] = []
 
-        # 1. Check for any embedded URLs
+        # 1. Check for any embedded URLs or direct URL target in text
         extracted_urls = extract_urls_from_text(raw_text)[:3]
+        if not extracted_urls:
+            trimmed = raw_text.strip()
+            if trimmed and not any(c.isspace() for c in trimmed) and "." in trimmed:
+                extracted_urls = [trimmed if (trimmed.startswith("http://") or trimmed.startswith("https://")) else f"http://{trimmed}"]
+
         laya_combined_signals: Dict[str, Any] = {}
+        content_url_signals: Dict[str, Any] = {}
         for url in extracted_urls:
+            # Deterministic URL analyzer runs BEFORE Laya
             url_det = analyze_url(url)
             all_findings.extend(url_det.findings)
+            for sig_key, sig_val in url_det.signals.items():
+                if isinstance(sig_val, bool):
+                    content_url_signals[sig_key] = content_url_signals.get(sig_key, False) or sig_val
+                elif isinstance(sig_val, (int, float)):
+                    content_url_signals[sig_key] = max(content_url_signals.get(sig_key, 0), sig_val)
+                elif isinstance(sig_val, list):
+                    existing_list = content_url_signals.get(sig_key, [])
+                    content_url_signals[sig_key] = list(set(existing_list + sig_val))
+                elif sig_key not in content_url_signals:
+                    content_url_signals[sig_key] = sig_val
+
+            # Laya URL-only scan (runs after deterministic URL analysis)
             laya_res = self.laya.analyze_url(url)
             all_findings.extend(laya_res.get("findings", []))
             for k, v in laya_res.get("signals", {}).items():
@@ -369,33 +400,43 @@ class ScanOrchestrator:
         qwen_res = await self.qwen.analyze_content(raw_text, context_hints={"urls": extracted_urls})
         all_findings.extend(qwen_res.get("findings", []))
 
-        # 3. Simple text indicators
+        # 3. Simple text indicators merged with deterministic URL signals
         lower = raw_text.lower()
         signals = {
             "has_urls": bool(extracted_urls),
             "content_length": len(raw_text),
             "urgent_keywords": any(k in lower for k in ("urgent", "immediately", "account suspended")),
             "credential_keywords": any(k in lower for k in ("password", "credential", "verify login")),
+            **content_url_signals,
         }
         if signals["urgent_keywords"]:
             all_findings.append(Finding(
                 severity="low",
                 title="Urgency Indicators",
                 description="The text content communicates pressure or tight deadlines.",
-                category="content"
+                category="content",
+                signal_type="urgency",
+                weight=10,
+                evidence="Urgent language detected",
+                source="deterministic",
             ))
         if signals["credential_keywords"]:
             all_findings.append(Finding(
                 severity="medium",
                 title="Credential References",
                 description="The text mentions authentication credentials, account passwords, or login access.",
-                category="content"
+                category="content",
+                signal_type="credentials",
+                weight=20,
+                evidence="Credential references detected",
+                source="deterministic",
             ))
 
         # Providers accounting for honest reporting
         providers_used = ["Deterministic Content & Keyword Detector"]
         providers_not_used = []
         if extracted_urls:
+            providers_used.insert(0, "Deterministic URL Heuristics Detector")
             providers_used.append("Laya Neural URL Engine (CPU ModernBERT)")
         if qwen_res.get("available"):
             providers_used.append("Qwen Semantic Content Reasoner (GPU Ollama)")

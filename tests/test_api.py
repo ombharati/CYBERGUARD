@@ -261,3 +261,47 @@ def test_clear_scan_history():
     assert len(res_list.json()) == 0
 
 
+def test_deterministic_url_signals_in_evidence_panel():
+    # 1. URL scan with lookalike domain
+    res_url = client.post(
+        "/api/scans",
+        json={"input_type": "url", "data": "https://hdfc-bank-kyc-update.com/login/verify?customer=123"},
+    )
+    assert res_url.status_code == 200
+    scan_url = res_url.json()
+    det_findings = [f for f in scan_url["findings"] if f.get("source") == "deterministic" or f.get("category") == "deterministic_url"]
+    assert len(det_findings) >= 1
+    assert any("Lookalike" in f["title"] for f in det_findings)
+    assert any(f.get("weight", 0) > 0 for f in det_findings)
+
+    # 2. Content scan with embedded lookalike URL
+    res_content = client.post(
+        "/api/scans",
+        json={"input_type": "content", "data": "Please urgently update KYC at http://paypa1-update-login.com to avoid account suspension."},
+    )
+    assert res_content.status_code == 200
+    scan_content = res_content.json()
+    content_det_findings = [f for f in scan_content["findings"] if f.get("source") == "deterministic" or f.get("category") == "deterministic_url"]
+    assert len(content_det_findings) >= 1
+    assert any("Lookalike" in f["title"] or "Clean" in f["title"] or "Domain" in f["title"] for f in content_det_findings)
+    assert any(f.get("weight", 0) >= 0 for f in content_det_findings)
+
+    # 3. Email scan with embedded lookalike URL
+    res_email = client.post(
+        "/api/scans",
+        json={
+            "input_type": "email",
+            "data": {
+                "sender": "alert@paypa1-fake.com",
+                "subject": "Urgent Security Notice",
+                "body": "Click here to verify: https://paypa1-update-login.com/login",
+            },
+        },
+    )
+    assert res_email.status_code == 200
+    scan_email = res_email.json()
+    email_det_findings = [f for f in scan_email["findings"] if f.get("source") == "deterministic" or f.get("category") == "deterministic_url"]
+    assert len(email_det_findings) >= 1
+
+
+
