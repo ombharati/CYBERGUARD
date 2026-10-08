@@ -227,3 +227,7 @@ For in-depth technical guides, explore the dedicated documentation in [`docs/`](
 - [Deployment & Operations](./docs/deployment.md) — Native tunnel, Docker Compose, and GitHub Pages hybrid setup.
 - [Developer Guide](./docs/development.md) — Local environment setup, test suites, and contribution workflow.
 
+
+## Security & Access Control
+- **SSRF Protection:** Built-in safeguards against Server-Side Request Forgery when analyzing URLs.
+- **API Key Authentication:** Optional shared-secret API key (via `CYBERGUARD_API_KEY`) to deter unauthorized usage when exposed publicly via Cloudflare Tunnels.
