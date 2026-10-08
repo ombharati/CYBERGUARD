@@ -22,20 +22,17 @@ function getApiBaseUrl() {
     return clean;
   }
 
-  if (
-    !window.location.hostname ||
-    window.location.protocol === "file:" ||
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-  ) {
+  const host = window.location.hostname;
+  if (!host || window.location.protocol === "file:" || host === "localhost" || host === "127.0.0.1") {
     return "http://localhost:8000";
   }
 
-  if (window.location.origin && window.location.origin !== "null" && !window.location.hostname.endsWith("github.io")) {
+  // If served from a remote origin, do NOT fallback to localhost. Try same origin, or return null.
+  if (window.location.origin && window.location.origin !== "null" && !host.endsWith("github.io")) {
     return window.location.origin;
   }
 
-  return "http://localhost:8000";
+  return null;
 }
 
 const API_BASE_URL = getApiBaseUrl();
@@ -90,6 +87,9 @@ function handleRequestFailure(error) {
 }
 
 function formatNetworkError(err, context = "CYBERGUARD backend") {
+  if (!API_BASE_URL) {
+    return "API URL not configured. Append ?api=YOUR_URL to the page URL.";
+  }
   if (!navigator.onLine) {
     return "Internet connection is offline.";
   }
@@ -99,7 +99,7 @@ function formatNetworkError(err, context = "CYBERGUARD backend") {
   if (err.message && (err.message.startsWith("HTTP ") || err.message.startsWith("Server returned HTTP "))) {
     return `Server error: ${err.message}`;
   }
-  return `Cannot reach server at ${API_BASE_URL}. Verify backend service is running.`;
+  return `Cannot reach API at ${API_BASE_URL}. Verify backend service is running.`;
 }
 
 async function retryConnection() {
@@ -288,6 +288,7 @@ $("#analyze-button").addEventListener("click", () => {
 
   let rawInput;
   try {
+    if (!API_BASE_URL) throw new Error("API URL not configured. Append ?api=YOUR_URL to the page URL.");
     rawInput = getCurrentInputData();
   } catch (err) {
     setError(err.message);
@@ -617,6 +618,12 @@ window.addEventListener("offline", () => {
    - Surfaces status & failures in UI pill & error banner
 ----------------------------- */
 async function checkHealth(timeoutMs = 2000) {
+  if (!API_BASE_URL) {
+    const msg = "API URL not configured. Append ?api=YOUR_URL to the page URL.";
+    setHealth("unhealthy");
+    setError(msg);
+    throw new Error(msg);
+  }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort("Health check timeout (2s exceeded)");
