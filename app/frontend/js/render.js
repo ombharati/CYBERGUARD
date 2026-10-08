@@ -359,19 +359,10 @@ function createSignalElement(signal) {
   nameSpan.textContent = signal.name || "Signal";
   row.appendChild(nameSpan);
 
-  const meter = document.createElement("div");
-  meter.className = "signal-meter";
-
-  const fill = document.createElement("div");
-  fill.className = "signal-fill";
-  const val = Math.min(100, Math.max(0, Number(signal.value) || 0));
-  fill.style.width = `${val}%`;
-  meter.appendChild(fill);
-  row.appendChild(meter);
-
   const valSpan = document.createElement("span");
   valSpan.className = "signal-val";
-  valSpan.textContent = `${val}%`;
+  valSpan.style.fontWeight = "bold";
+  valSpan.textContent = signal.value;
   row.appendChild(valSpan);
 
   return row;
@@ -432,7 +423,7 @@ function createEvidenceItemElement(finding) {
     item.appendChild(desc);
   }
 
-  // Weight progress bar
+  // Weight text
   const weightVal = Number(finding.weight || 0);
   const weightRow = document.createElement("div");
   weightRow.className = "evidence-weight-row";
@@ -446,10 +437,11 @@ function createEvidenceItemElement(finding) {
   barBg.className = "evidence-bar-bg";
   const barFill = document.createElement("div");
   barFill.className = "evidence-bar-fill";
-  const pct = Math.min(100, Math.max(8, Math.round((weightVal / 45) * 100)));
+  const pct = Math.min(100, Math.max(8, weightVal));
   barFill.style.width = `${pct}%`;
   barBg.appendChild(barFill);
   weightRow.appendChild(barBg);
+
   item.appendChild(weightRow);
 
   // Triggered Evidence text
@@ -700,17 +692,23 @@ function render() {
       } else {
         recList.replaceChildren(
           ...recActions.map((action) => {
-            const label = document.createElement("label");
-            label.className = "recommendation-item";
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.className = "rec-checkbox";
+            const wrapper = document.createElement("div");
+            wrapper.className = "recommendation-item";
+            wrapper.style.display = "flex";
+            wrapper.style.gap = "8px";
+            wrapper.style.alignItems = "flex-start";
+            
+            const bullet = document.createElement("span");
+            bullet.textContent = "•";
+            bullet.style.color = "#94a3b8";
+            
             const text = document.createElement("span");
             text.className = "rec-text";
             text.textContent = action;
-            label.appendChild(checkbox);
-            label.appendChild(text);
-            return label;
+            
+            wrapper.appendChild(bullet);
+            wrapper.appendChild(text);
+            return wrapper;
           })
         );
       }

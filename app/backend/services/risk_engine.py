@@ -162,7 +162,17 @@ class RiskEngine:
         else:
             final_score = min(98, max(12, raw_sum))
 
-        # --- 6. Calibrated Verdict-Driven Rules ---
+        # Deduplicate and sort findings by severity (high -> medium -> low) early
+        severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        unique_findings: List[Finding] = []
+        seen_titles = set()
+        for f in all_findings:
+            if f.title not in seen_titles:
+                seen_titles.add(f.title)
+                unique_findings.append(f)
+        unique_findings.sort(key=lambda x: severity_order.get(x.severity, 4))
+
+        # --- 6. Calibrated Verdict-Driven Rules & Severity Floors ---
         # Critical malicious infrastructure overrides
         is_critical_infra = (
             detector_signals.get("is_ssrf_risk")
@@ -170,29 +180,36 @@ class RiskEngine:
             or external_points >= 40
         )
 
+        high_count = sum(1 for f in unique_findings if f.severity in ("high", "critical"))
+        medium_count = sum(1 for f in unique_findings if f.severity == "medium")
+
+        # Apply floors
+        if high_count >= 2:
+            final_score = max(final_score, 81)
+        elif high_count == 1:
+            final_score = max(final_score, 61)
+        
+        if medium_count >= 1:
+            final_score = max(final_score, 41)
+
         if is_critical_infra:
             final_score = max(final_score, 88)
         elif is_official and not is_critical_infra:
-            # Verified official brand domain with routine navigation -> Safe
             final_score = min(final_score, 12)
         elif verdict == "likely_phishing":
-            # Multi-question reasoning confirmed phishing -> High Risk
             final_score = max(final_score, 88)
         elif verdict == "likely_legitimate" and not is_lookalike:
-            # Multi-question reasoning confirmed legitimate -> Safe
             final_score = min(final_score, 18)
         elif verdict == "suspicious":
-            # Exactly one question problematic -> Suspicious
             final_score = min(74, max(50, final_score))
         elif is_lookalike and has_sensitive_path:
-            # Lookalike domain with login/KYC path
             final_score = max(final_score, 85)
         elif is_lookalike:
             final_score = max(final_score, 75)
         elif laya_phishing >= 0.88:
             final_score = max(final_score, 80)
 
-        # Classification mapping: 0-20 Safe, 21-40 Low, 41-60 Medium, 61-80 High, 81-100 Critical
+        # Classification mapping
         if final_score >= 81:
             classification = "Critical"
         elif final_score >= 61:
@@ -204,26 +221,38 @@ class RiskEngine:
         else:
             classification = "Safe"
 
-        # Deduplicate and sort findings by severity (high -> medium -> low)
-        severity_order = {"high": 0, "medium": 1, "low": 2}
-        unique_findings: List[Finding] = []
-        seen_titles = set()
-        for f in all_findings:
-            if f.title not in seen_titles:
-                seen_titles.add(f.title)
-                unique_findings.append(f)
-        unique_findings.sort(key=lambda x: severity_order.get(x.severity, 3))
+        # Log the arithmetic
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("[risk_engine] signals=%d sum=%d multiplier=1.0 cap=%d final=%d tier=%s", len(unique_findings), raw_sum, raw_sum, final_score, classification)
 
-        # Format visual signal bars for frontend
-        pattern_value = min(100, max(final_score, int(capped_heuristics * 1.5)))
-        content_value = min(100, max(final_score - 5, int(capped_ai * 1.2))) if capped_ai > 0 else max(8, final_score - 10)
-        reputation_val = max(10, external_points * 2) if external_points > 0 else max(10, final_score - 20)
+        # Distribute final_score across findings proportionally
+        for f in unique_findings:
+            if not getattr(f, "weight", 0):
+                f.weight = 35 if f.severity in ("high", "critical") else (20 if f.severity == "medium" else 5)
+        
+        if unique_findings:
+            total_raw = sum(f.weight for f in unique_findings)
+            if total_raw > 0:
+                for f in unique_findings:
+                    f.weight = int(round((f.weight / total_raw) * final_score))
+                
+                # Correct rounding errors
+                current_sum = sum(f.weight for f in unique_findings)
+                diff = final_score - current_sum
+                if diff != 0:
+                    unique_findings[0].weight += diff
+
+        # Format visual signal counts for frontend (no decorative percentages)
+        det_count = sum(1 for f in unique_findings if getattr(f, "source", "deterministic") == "deterministic")
+        ai_count = sum(1 for f in unique_findings if getattr(f, "source", "") in ("ai", "qwen", "laya"))
+        ext_count = sum(1 for f in unique_findings if getattr(f, "source", "") == "external")
 
         signals_payload = [
-            {"name": "Pattern analysis", "value": pattern_value},
-            {"name": "Content indicators", "value": content_value},
-            {"name": "Risk aggregation", "value": final_score},
-            {"name": "Reputation signals", "value": reputation_val},
+            {"name": "Deterministic Rules Triggered", "value": det_count},
+            {"name": "AI Reasoning Flags", "value": ai_count},
+            {"name": "External Threat Intel Hits", "value": ext_count},
+            {"name": "Total Correlated Signals", "value": len(unique_findings)},
         ]
 
         # Generate reasoning-first summary and explanation
