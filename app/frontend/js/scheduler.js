@@ -56,7 +56,9 @@ class NetworkScheduler {
       .then((result) => {
         clearTimeout(timeoutId);
         this.failureStreak = 0;
-        if (typeof window.store?.setConnection === "function" && navigator.onLine) {
+        if (typeof window.handleRequestSuccess === "function") {
+          window.handleRequestSuccess();
+        } else if (typeof window.store?.setConnection === "function" && navigator.onLine) {
           window.store.setConnection("online");
         }
         item.resolve(result);
@@ -68,7 +70,9 @@ class NetworkScheduler {
         if (!isAbort && item.retries < 2 && navigator.onLine) {
           item.retries++;
           this.failureStreak++;
-          if (this.failureStreak >= 2 && typeof window.store?.setConnection === "function") {
+          if (typeof window.handleRequestFailure === "function") {
+            window.handleRequestFailure(error);
+          } else if (this.failureStreak >= 2 && typeof window.store?.setConnection === "function") {
             window.store.setConnection("reconnecting");
           }
           const backoffDelay = Math.min(1000 * Math.pow(2, item.retries), 10000);
@@ -77,8 +81,12 @@ class NetworkScheduler {
             this.pump();
           }, backoffDelay);
         } else {
-          if (!isAbort && !navigator.onLine && typeof window.store?.setConnection === "function") {
-            window.store.setConnection("offline");
+          if (!isAbort) {
+            if (typeof window.handleRequestFailure === "function") {
+              window.handleRequestFailure(error);
+            } else if (!navigator.onLine && typeof window.store?.setConnection === "function") {
+              window.store.setConnection("offline");
+            }
           }
           item.reject(error);
         }

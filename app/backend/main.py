@@ -75,11 +75,11 @@ async def add_security_headers(request, call_next):
     if request.url.path in ("/docs", "/redoc", "/openapi.json"):
         # Swagger UI and ReDoc require CDN assets from jsdelivr for interactive API documentation
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com"
+            "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; connect-src *;"
         )
     else:
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *;"
         )
     return response
 

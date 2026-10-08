@@ -255,6 +255,26 @@ button:disabled {
   background: var(--high);
 }
 
+.connection-retry-btn {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+
+.connection-retry-btn:hover {
+  background: rgba(239, 68, 68, 0.35);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
 /* --------------------------------------------------------------------------
    PAGE SHELL & EDITORIAL TYPOGRAPHY
    -------------------------------------------------------------------------- */

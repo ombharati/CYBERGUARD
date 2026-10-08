@@ -528,6 +528,7 @@ function render() {
   // 1. Connection status pill
   const pillText = $("#connection-text");
   const pillDot = $("#connection-dot");
+  const retryBtn = $("#connection-retry-btn");
   if (pillText && pillDot) {
     if (currentStore.connection === "online") {
       if (currentStore.health === "degraded") {
@@ -537,12 +538,15 @@ function render() {
         pillText.textContent = "Online";
         pillDot.className = "state-dot online";
       }
+      if (retryBtn) retryBtn.style.display = "none";
     } else if (currentStore.connection === "reconnecting") {
       pillText.textContent = "Reconnecting…";
       pillDot.className = "state-dot reconnecting";
+      if (retryBtn) retryBtn.style.display = "none";
     } else {
       pillText.textContent = "Offline";
       pillDot.className = "state-dot offline";
+      if (retryBtn) retryBtn.style.display = "inline-flex";
     }
   }
 

@@ -13,23 +13,116 @@
 function getApiBaseUrl() {
   const custom = localStorage.getItem("cyberguard_api_url");
   if (custom) return custom.replace(/\/+$/, "");
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    return window.location.port === "8000" ? window.location.origin : "http://localhost:8000";
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramApi = urlParams.get("api");
+  if (paramApi) {
+    const clean = paramApi.replace(/\/+$/, "");
+    localStorage.setItem("cyberguard_api_url", clean);
+    return clean;
   }
-  if (window.location.origin && !window.location.hostname.endsWith("github.io")) {
+
+  if (
+    !window.location.hostname ||
+    window.location.protocol === "file:" ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    return "http://localhost:8000";
+  }
+
+  if (window.location.origin && window.location.origin !== "null" && !window.location.hostname.endsWith("github.io")) {
     return window.location.origin;
   }
-  return "https://possibility-eyed-already-douglas.trycloudflare.com";
+
+  return "http://localhost:8000";
 }
 
 const API_BASE_URL = getApiBaseUrl();
 
 /* -----------------------------
+   CONNECTION STATE MACHINE
+   - Online when a request succeeds
+   - Reconnecting on first failure
+   - Offline after 30 seconds of no successful request
+   - Manual Retry button triggers immediate verification
+----------------------------- */
+let connectionFailureTimestamp = null;
+let offlineTransitionTimer = null;
+
+function handleRequestSuccess() {
+  connectionFailureTimestamp = null;
+  if (offlineTransitionTimer) {
+    clearTimeout(offlineTransitionTimer);
+    offlineTransitionTimer = null;
+  }
+  if (state.connection !== "online" && navigator.onLine) {
+    setConnection("online");
+  }
+}
+
+function handleRequestFailure(error) {
+  if (!navigator.onLine) {
+    setConnection("offline");
+    return;
+  }
+  const now = Date.now();
+  if (!connectionFailureTimestamp) {
+    connectionFailureTimestamp = now;
+  }
+
+  // Transition to Reconnecting on first failure
+  if (state.connection === "online") {
+    setConnection("reconnecting");
+  }
+
+  // Transition to Offline after 30 seconds of no successful request
+  if (!offlineTransitionTimer) {
+    const elapsed = now - connectionFailureTimestamp;
+    const remaining = Math.max(0, 30000 - elapsed);
+    offlineTransitionTimer = setTimeout(() => {
+      offlineTransitionTimer = null;
+      if (connectionFailureTimestamp && (Date.now() - connectionFailureTimestamp >= 30000)) {
+        setConnection("offline");
+      }
+    }, remaining);
+  }
+}
+
+function formatNetworkError(err, context = "CYBERGUARD backend") {
+  if (!navigator.onLine) {
+    return "Internet connection is offline.";
+  }
+  if (err.name === "AbortError") {
+    return `Connection to ${context} timed out.`;
+  }
+  if (err.message && (err.message.startsWith("HTTP ") || err.message.startsWith("Server returned HTTP "))) {
+    return `Server error: ${err.message}`;
+  }
+  return `Cannot reach server at ${API_BASE_URL}. Verify backend service is running.`;
+}
+
+async function retryConnection() {
+  setConnection("reconnecting");
+  connectionFailureTimestamp = Date.now();
+  if (offlineTransitionTimer) {
+    clearTimeout(offlineTransitionTimer);
+    offlineTransitionTimer = null;
+  }
+  try {
+    await checkHealth(3000);
+    handleRequestSuccess();
+  } catch (err) {
+    handleRequestFailure(err);
+  }
+}
+
+window.handleRequestSuccess = handleRequestSuccess;
+window.handleRequestFailure = handleRequestFailure;
+window.retryConnection = retryConnection;
+
+/* -----------------------------
    BACKPRESSURED POLLING LOOP
-   - Single poll loop using setTimeout
-   - Polls queued/processing scans
-   - Drops terminal scans permanently
-   - Widens interval & flips connection on repeated errors
 ----------------------------- */
 let pollTimerId = null;
 let pollIntervalMs = 2000;
@@ -84,9 +177,7 @@ async function runPollIteration() {
 
         consecutivePollFailures = 0;
         pollIntervalMs = 2000;
-        if (state.connection !== "online" && navigator.onLine) {
-          setConnection("online");
-        }
+        handleRequestSuccess();
 
         setScan({
           ...scan,
@@ -96,9 +187,9 @@ async function runPollIteration() {
       } catch (err) {
         if (err.name !== "AbortError") {
           consecutivePollFailures++;
+          handleRequestFailure(err);
           if (consecutivePollFailures >= 2) {
             pollIntervalMs = Math.min(pollIntervalMs * 1.5, 10000);
-            setConnection("reconnecting");
           }
         }
       }
@@ -260,8 +351,16 @@ $("#analyze-button").addEventListener("click", () => {
         });
 
         if (!response.ok) {
-          throw new Error(`Server returned HTTP ${response.status}`);
+          let errDetail = `Server returned HTTP ${response.status}`;
+          try {
+            const errJson = await response.json();
+            if (errJson && errJson.detail) {
+              errDetail = typeof errJson.detail === "string" ? errJson.detail : JSON.stringify(errJson.detail);
+            }
+          } catch (_) {}
+          throw new Error(errDetail);
         }
+        handleRequestSuccess();
         return response.json();
       },
       { priority: 2, timeout: 15000 }
@@ -276,13 +375,14 @@ $("#analyze-button").addEventListener("click", () => {
     })
     .catch((err) => {
       if (err.name === "AbortError") return;
+      handleRequestFailure(err);
       setScan({
         id: tempId,
         status: "failed",
         classification: "Failed",
-        summary: "Analysis request failed or timed out. Click to retry."
+        summary: "Analysis request failed. Click to retry."
       });
-      setError(err.message || "Network request failed.");
+      setError(formatNetworkError(err, "CYBERGUARD backend"));
     });
 });
 
@@ -515,23 +615,23 @@ async function checkHealth(timeoutMs = 2000) {
     const res = await fetch(`${API_BASE_URL}/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (!res.ok) {
-      throw new Error(`Health check returned HTTP ${res.status}`);
+      throw new Error(`Server returned HTTP ${res.status}`);
     }
     const data = await res.json();
     console.info("[health_check] Backend reported healthy:", data);
     setHealth(data.status === "ok" ? "healthy" : "degraded");
-    setConnection("online");
-    if (state.error && state.error.startsWith("Backend connection failed")) {
+    handleRequestSuccess();
+    if (state.error && state.error.includes("Cannot reach server")) {
       setError(null);
     }
     return data;
   } catch (err) {
     clearTimeout(timeoutId);
-    const msg = err.name === "AbortError" ? `Health check timed out after ${timeoutMs / 1000}s` : (err.message || "Failed to connect to backend");
-    console.error("[health_check] Health check failed loudly:", msg, err);
+    handleRequestFailure(err);
     setHealth("unhealthy");
-    setConnection("offline");
-    setError(`Backend connection failed: ${msg}. System is operating in offline mode.`);
+    const msg = formatNetworkError(err, "CYBERGUARD backend");
+    console.error("[health_check] Health check failed loudly:", msg, err);
+    setError(msg);
     throw err;
   }
 }
@@ -542,22 +642,30 @@ async function checkHealth(timeoutMs = 2000) {
 // 1. Initial synchronous paint from state
 render();
 
-// 2. Immediate health check (fail loud with 2s timeout)
+// 2. Retry button listener
+$("#connection-retry-btn")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  retryConnection();
+});
+
+// 3. Immediate health check (fail loud with 2s timeout)
 checkHealth(2000).catch((err) => {
   console.warn("[startup] Initial health check detected backend offline:", err.message);
 });
 
-// 3. Non-blocking initial history sync via scheduler
+// 4. Non-blocking initial history sync via scheduler
 scheduler
   .enqueue(
     (signal) =>
       fetch(`${API_BASE_URL}/api/v1/scans`, { signal }).then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) throw new Error(`Server returned HTTP ${r.status}`);
         return r.json();
       }),
     { priority: 0, timeout: 8000 }
   )
   .then((serverScans) => {
+    handleRequestSuccess();
     if (Array.isArray(serverScans) && serverScans.length) {
       for (const item of serverScans) {
         setScan(item);
@@ -570,8 +678,9 @@ scheduler
     }
   })
   .catch((err) => {
+    handleRequestFailure(err);
     console.error("[history_sync] Failed to load history from backend:", err);
     if (!state.error) {
-      setError(`Unable to load scan history: ${err.message || "Network error"}`);
+      setError(formatNetworkError(err, "CYBERGUARD backend"));
     }
   });
