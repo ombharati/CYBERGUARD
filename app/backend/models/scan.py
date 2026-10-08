@@ -41,6 +41,9 @@ class Scan(Base):
     report_text = Column(Text, nullable=True)
     report_generated_by = Column(String(20), nullable=True)  # "qwen" or "template"
     
+    # Idempotency key for deduplication
+    idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
+
     # Error tracking & retries
     error_message = Column(Text, nullable=True)
     retries = Column(Integer, default=0, nullable=False)

@@ -35,8 +35,17 @@ class ScanService:
         input_type: str,
         data: Union[str, Dict[str, Any]],
         run_sync: bool = False,
+        idempotency_key: Optional[str] = None,
     ) -> Scan:
-        """Create a new scan record in PostgreSQL and either execute or enqueue it."""
+        """Create a new scan record in PostgreSQL and either execute or enqueue it.
+        If idempotency_key is provided and a scan with that key exists, return it instead.
+        """
+        if idempotency_key:
+            existing = db.query(Scan).filter(Scan.idempotency_key == idempotency_key).first()
+            if existing:
+                logger.info("Deduplicated scan creation: returning existing %s for key %s", existing.id, idempotency_key)
+                return existing
+
         target_summary = self._extract_target_summary(input_type, data)
 
         scan = Scan(
@@ -44,6 +53,7 @@ class ScanService:
             input_type=input_type,
             target=target_summary,
             raw_input=data,
+            idempotency_key=idempotency_key,
             status="queued",
             risk_score=0,
             classification="Queued",

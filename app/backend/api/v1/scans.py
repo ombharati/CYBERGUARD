@@ -3,7 +3,7 @@
 Routes handle HTTP concerns only.
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, status, Response
 from sqlalchemy.orm import Session
 from app.backend.core.database import get_db
 from app.backend.schemas.scan import ScanCreateRequest, ScanResponse
@@ -22,6 +22,7 @@ _scan_service = ScanService()
 async def create_scan(
     request: ScanCreateRequest,
     sync: bool = Query(False, description="Wait for scan completion before responding"),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ):
     try:
@@ -30,6 +31,7 @@ async def create_scan(
             input_type=request.input_type,
             data=request.data,
             run_sync=sync,
+            idempotency_key=idempotency_key,
         )
         return scan.to_dict()
     except ValueError as val_err:
