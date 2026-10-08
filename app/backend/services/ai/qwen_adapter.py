@@ -348,7 +348,19 @@ class QwenAdapter:
         """
         Reason over email or text content under identity, behavior, and request rules.
         """
-        truncated_text = text_content.strip()[:settings.MAX_CONTENT_LENGTH]
+        lines = text_content.splitlines()
+        MAX_LINES = 50
+        MAX_BYTES = 4096
+        
+        if len(lines) > MAX_LINES:
+            logger.info("[qwen_adapter] Truncating input from %d lines to %d lines to prevent context overflow", len(lines), MAX_LINES)
+            text_content = "\n".join(lines[:MAX_LINES]) + "\n...[TRUNCATED]"
+            
+        if len(text_content) > MAX_BYTES:
+            logger.info("[qwen_adapter] Truncating input from %d chars to %d chars to prevent context overflow", len(text_content), MAX_BYTES)
+            text_content = text_content[:MAX_BYTES] + "...[TRUNCATED]"
+            
+        truncated_text = text_content.strip()
         hints_str = ""
         if context_hints:
             hints_str = f"\nEXTRACTED CONTEXT & SIGNALS:\n{json.dumps(context_hints, default=str, indent=2)}\n"
