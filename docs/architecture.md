@@ -241,11 +241,11 @@ The Risk Engine is the central decision boundary.
 
 Its responsibilities are limited to:
 
-1. Normalize heterogeneous signals.
-2. Apply the scoring model.
-3. Produce the composite score.
-4. Map the score to a classification.
-5. Preserve the evidence used to reach the result.
+1. Normalize heterogeneous signals using a strict sum-of-weights model (e.g. `raw_sum = sum(finding.weight)`).
+2. Apply safety floors based on the highest severity finding (e.g. Critical finding guarantees score ≥ 90).
+3. Produce the final composite score (capped at 100).
+4. Map the score to a normalized classification (Safe, Low, Medium, High, Critical).
+5. Generate evidence math mapping to preserve the exact arithmetic used to reach the result.
 
 It should not perform HTTP requests, database operations, or model inference.
 
