@@ -381,49 +381,20 @@ def print_evaluation_summary(
     recall = (tp / (tp + fn)) if (tp + fn) > 0 else 0.0
     f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
     accuracy = ((tp + tn) / total) if total > 0 else 0.0
+    fpr = (fp / actual_legitimate) if actual_legitimate > 0 else 0.0
 
-    # Skipped rows summary & warning checks
-    total_phish_skips = sum(phish_skips.values())
-    total_legit_skips = sum(legit_skips.values())
-
-    phish_skip_pct = (total_phish_skips / phish_inspected * 100) if phish_inspected > 0 else 0.0
-    legit_skip_pct = (total_legit_skips / legit_inspected * 100) if legit_inspected > 0 else 0.0
-
-    print("\n" + "=" * 68)
-    print("               CYBERGUARD ACCURACY EVALUATION REPORT")
-    print("=" * 68)
-
-    print("\n[ DATASET INGESTION & QUALITY METRICS ]")
-    print(f"• PhishTank Dataset : {actual_phishing} valid URLs loaded (examined: {phish_inspected}, skipped: {total_phish_skips} [{phish_skip_pct:.1f}%])")
-    for reason, count in phish_skips.items():
-        if count > 0:
-            print(f"    - {reason}: {count}")
-
-    print(f"• Tranco Dataset    : {actual_legitimate} valid URLs loaded (examined: {legit_inspected}, skipped: {total_legit_skips} [{legit_skip_pct:.1f}%])")
-    for reason, count in legit_skips.items():
-        if count > 0:
-            print(f"    - {reason}: {count}")
-
-    if phish_skip_pct > 20.0:
-        print(f"\n[WARNING] Over 20% of examined rows in PhishTank dataset were skipped ({phish_skip_pct:.1f}%).")
-    if legit_skip_pct > 20.0:
-        print(f"\n[WARNING] Over 20% of examined rows in Tranco dataset were skipped ({legit_skip_pct:.1f}%).")
-
-    print("\n[ CONFUSION MATRIX ]")
-    print(f"{'':22} | {'Predicted Phishing':^20} | {'Predicted Legitimate':^20}")
-    print("-" * 68)
-    print(f"{'Actual Phishing':22} | {tp:^20d} | {fn:^20d}")
-    print(f"{'Actual Legitimate':22} | {fp:^20d} | {tn:^20d}")
-    print("-" * 68)
-
-    print("\n[ PERFORMANCE METRICS ]")
-    print(f"• Total Evaluated   : {total}")
-    print(f"• Accuracy          : {accuracy * 100:.2f}% ({tp + tn}/{total})")
-    print(f"• Precision         : {precision * 100:.2f}% (TP / [TP + FP])")
-    print(f"• Recall (TPR)      : {recall * 100:.2f}% (TP / [TP + FN])")
-    print(f"• F1-Score          : {f1 * 100:.2f}%")
-    print(f"• False Alarm (FPR) : {(fp / actual_legitimate * 100) if actual_legitimate else 0:.2f}% (FP / Actual Legit)")
-    print("=" * 68 + "\n")
+    print("\n| Metric | Value | Read |")
+    print("|---|---|---|")
+    print(f"| Accuracy | {accuracy * 100:.2f}% | Overall correctness |")
+    print(f"| Precision | {precision * 100:.2f}% | Of flags raised, how many were right |")
+    print(f"| Recall | {recall * 100:.2f}% | Of real phishing, how many caught |")
+    print(f"| F1 | {f1 * 100:.2f}% | Balance of precision and recall |")
+    print(f"| FPR | {fpr * 100:.2f}% | Of legitimate, how many wrongly flagged |")
+    print(f"| True Positives | {tp} | Phishing correctly flagged |")
+    print(f"| False Positives | {fp} | Legitimate wrongly flagged |")
+    print(f"| True Negatives | {tn} | Legitimate correctly cleared |")
+    print(f"| False Negatives | {fn} | Phishing missed |\n")
+    print("Recall high and precision low means trigger-happy. Precision high and recall low means missing threats. Aim for both above 85%.\n")
 
 
 def save_results_csv(output_path: Path, results: List[Dict[str, Any]]):
