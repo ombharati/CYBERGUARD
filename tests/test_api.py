@@ -250,3 +250,14 @@ def test_idempotency_keys_deduplication(mock_enqueue):
     db.close()
 
 
+def test_clear_scan_history():
+    res = client.delete("/api/v1/scans")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "cleared"
+
+    res_list = client.get("/api/v1/scans")
+    assert res_list.status_code == 200
+    assert len(res_list.json()) == 0
+
+

@@ -1477,8 +1477,31 @@ textarea:focus {
 }
 
 .history-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   padding-bottom: 20px;
   border-bottom: 1px solid var(--border);
+}
+
+.clear-history-button {
+  padding: 8px 14px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 9px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.clear-history-button:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #ffffff;
 }
 
 .history-filters {

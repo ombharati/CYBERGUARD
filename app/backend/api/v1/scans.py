@@ -113,3 +113,15 @@ def list_scans(
 ):
     scans = _scan_service.list_recent_scans(db=db, limit=limit)
     return [s.to_dict() for s in scans]
+
+
+@router.delete(
+    "",
+    summary="Clear scan history",
+)
+def clear_all_scans(db: Session = Depends(get_db)):
+    from app.backend.models.scan import Scan
+    db.query(Scan).delete()
+    db.commit()
+    return {"status": "cleared", "message": "All scan history cleared"}
+

@@ -515,6 +515,17 @@ $$(".filter-chip").forEach((chip) => {
   });
 });
 
+// Clear history action
+$("#clear-history-btn")?.addEventListener("click", () => {
+  if (typeof clearHistory === "function") {
+    clearHistory();
+  } else if (window.store && typeof window.store.clearHistory === "function") {
+    window.store.clearHistory();
+  }
+  // Clear server history as well
+  fetch(`${API_BASE_URL}/api/v1/scans`, { method: "DELETE" }).catch(() => {});
+});
+
 // Delegated report opener on scan list items
 document.addEventListener("click", (event) => {
   const btn = event.target.closest("[data-report-id]");
