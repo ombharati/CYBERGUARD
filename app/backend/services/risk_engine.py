@@ -192,11 +192,15 @@ class RiskEngine:
         elif laya_phishing >= 0.88:
             final_score = max(final_score, 80)
 
-        # Classification mapping
-        if final_score >= 75:
-            classification = "High Risk"
-        elif final_score >= 45:
-            classification = "Suspicious"
+        # Classification mapping: 0-20 Safe, 21-40 Low, 41-60 Medium, 61-80 High, 81-100 Critical
+        if final_score >= 81:
+            classification = "Critical"
+        elif final_score >= 61:
+            classification = "High"
+        elif final_score >= 41:
+            classification = "Medium"
+        elif final_score >= 21:
+            classification = "Low"
         else:
             classification = "Safe"
 
@@ -261,16 +265,21 @@ class RiskEngine:
         med_findings = [f.title for f in findings if f.severity == "medium"]
 
         # Base summary
-        if classification == "High Risk":
+        if classification in ("Critical", "High", "High Risk"):
             if qwen_summary:
                 summary = f"Critical threat identified: {qwen_summary}"
             else:
-                summary = f"Critical security threats detected in this {input_type}. Primary indicators: {', '.join((high_findings + med_findings)[:2])}."
-        elif classification == "Suspicious":
+                summary = f"High-risk security threats detected in this {input_type}. Primary indicators: {', '.join((high_findings + med_findings)[:2])}."
+        elif classification in ("Medium", "Suspicious"):
             if qwen_summary:
                 summary = f"Suspicious activity: {qwen_summary}"
             else:
                 summary = f"Anomalous patterns warranting caution in this {input_type}. Notable indicators: {', '.join((high_findings + med_findings)[:2]) or 'Contextual inconsistency'}."
+        elif classification == "Low":
+            if qwen_summary:
+                summary = f"Low risk: {qwen_summary}"
+            else:
+                summary = f"Minor indicators noted in this {input_type}, but overall posture remains low risk."
         else:
             if qwen_summary:
                 summary = qwen_summary
@@ -291,10 +300,12 @@ class RiskEngine:
                 parts.append(f"Benign Alternative: {'; '.join(valid_expls[:2])}")
 
         if not parts:
-            if classification == "High Risk":
+            if classification in ("Critical", "High", "High Risk"):
                 parts.append("Multi-engine inspection confirmed deceptive patterns or malicious mechanisms. Do NOT input credentials or interact with this resource.")
-            elif classification == "Suspicious":
+            elif classification in ("Medium", "Suspicious"):
                 parts.append("Elevated risk signals detected. While not definitively hostile, caution is advised before proceeding.")
+            elif classification == "Low":
+                parts.append("Minor informational flags observed without active compromise indicators.")
             else:
                 parts.append("Identity, behavior, and request criteria evaluated as clean. Standard security vigilance is recommended.")
 

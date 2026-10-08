@@ -56,7 +56,7 @@ class ScanResponse(BaseModel):
     target: str
     status: str
     score: int = 0
-    classification: str = "Processing"
+    classification: str = Field("Processing", description="Risk tier: 'Safe' (0-20), 'Low' (21-40), 'Medium' (41-60), 'High' (61-80), 'Critical' (81-100), or 'Processing'")
     summary: str = ""
     findings: List[FindingResponse] = Field(default_factory=list)
     signals: List[SignalResponse] = Field(default_factory=list)

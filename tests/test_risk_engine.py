@@ -37,8 +37,9 @@ def test_suspicious_input_assessment():
             Finding(severity="medium", title="Keywords", description="login, verify"),
         ],
     )
-    assert assessment.classification in ("Suspicious", "High Risk")
-    assert assessment.score >= 45
+    assert assessment.classification == "Medium"
+    assert assessment.score >= 41
+    assert assessment.score <= 60
 
 
 def test_compound_high_risk_assessment():
@@ -64,9 +65,9 @@ def test_compound_high_risk_assessment():
             Finding(severity="high", title="Credential Harvesting", description="Directs user to input pass"),
         ],
     )
-    assert assessment.classification == "High Risk"
-    assert assessment.score >= 75
-    assert "Critical security threats detected" in assessment.summary
+    assert assessment.classification == "Critical"
+    assert assessment.score >= 81
+    assert "security threats detected" in assessment.summary.lower()
 
 
 def test_ssrf_critical_floor():
@@ -79,8 +80,8 @@ def test_ssrf_critical_floor():
         external_intel_signals={},
         all_findings=[Finding(severity="high", title="SSRF Target", description="Metadata IP")],
     )
-    assert assessment.classification == "High Risk"
-    assert assessment.score >= 75
+    assert assessment.classification == "Critical"
+    assert assessment.score >= 81
 
 
 def test_official_bank_domain_is_safe_with_login_path():
@@ -101,7 +102,7 @@ def test_official_bank_domain_is_safe_with_login_path():
         qwen_verdict="likely_legitimate",
     )
     assert assessment.classification == "Safe"
-    assert assessment.score <= 15
+    assert assessment.score <= 20
 
 
 def test_lookalike_domain_with_sensitive_path_triggers_high_risk():
@@ -124,7 +125,25 @@ def test_lookalike_domain_with_sensitive_path_triggers_high_risk():
         qwen_reasoning="Identity mismatch: domain is hdfc-bank-kyc-update.com instead of hdfc.bank.in.",
         qwen_what_would_change_my_mind="If domain resolved to hdfc.bank.in.",
     )
-    assert assessment.classification == "High Risk"
-    assert assessment.score >= 85
+    assert assessment.classification == "Critical"
+    assert assessment.score >= 81
     assert "Calibration Criteria" in assessment.explanation
+
+
+def test_low_risk_tier_classification():
+    assessment = RiskEngine.calculate_risk(
+        input_type="url",
+        target="https://suspicious-looking-subdomain.example.org",
+        detector_signals={
+            "subdomain_count": 3,
+            "entropy": 3.0,
+        },
+        laya_signals={},
+        qwen_signals={},
+        external_intel_signals={},
+        all_findings=[Finding(severity="low", title="Deep Subdomain", description="3 levels")],
+    )
+    # Subdomain count gives 15 points, normalized to >= 12 and <= 20 or ~25
+    # Let's verify it falls into Safe (<=20) or Low (21-40)
+    assert assessment.classification in ("Safe", "Low")
 

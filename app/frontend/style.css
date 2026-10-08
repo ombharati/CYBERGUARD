@@ -801,20 +801,34 @@ textarea:focus {
 
 .risk-safe {
   background: var(--safe-soft);
-  color: var(--safe);
+  color: #10b981;
   border: 1px solid var(--safe-border);
 }
 
+.risk-low {
+  background: rgba(20, 184, 166, 0.12);
+  color: #14b8a6;
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.risk-medium,
 .risk-suspicious {
   background: var(--warning-soft);
-  color: var(--warning);
+  color: #f59e0b;
   border: 1px solid var(--warning-border);
 }
 
 .risk-high {
+  background: rgba(249, 115, 22, 0.12);
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.risk-critical {
   background: var(--danger-soft);
-  color: var(--danger);
+  color: #ef4444;
   border: 1px solid var(--danger-border);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.25);
 }
 
 .result-top-actions {

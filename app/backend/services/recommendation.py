@@ -38,13 +38,13 @@ def normalize_threat_category(input_type: str, classification: str) -> str:
     inp = (input_type or "").strip().lower()
     cls_clean = (classification or "").strip().lower().replace(" ", "_")
 
-    if inp in ("url",) and cls_clean in ("high_risk", "critical", "suspicious"):
+    if inp in ("url",) and cls_clean in ("high_risk", "critical", "suspicious", "high", "medium"):
         return "phishing_url"
-    if inp in ("email",) and cls_clean in ("high_risk", "critical", "suspicious"):
+    if inp in ("email",) and cls_clean in ("high_risk", "critical", "suspicious", "high", "medium"):
         return "phishing_email"
-    if inp in ("identity", "headers") and cls_clean in ("high_risk", "critical", "suspicious"):
+    if inp in ("identity", "headers") and cls_clean in ("high_risk", "critical", "suspicious", "high", "medium"):
         return "identity_spoof"
-    if inp in ("logs",) and cls_clean in ("high_risk", "critical", "suspicious"):
+    if inp in ("logs",) and cls_clean in ("high_risk", "critical", "suspicious", "high", "medium"):
         return "log_anomaly"
 
     return cls_clean

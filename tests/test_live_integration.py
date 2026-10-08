@@ -25,7 +25,7 @@ async def test_live_postgres_and_redis_lifecycle():
 
         assert scan.status == "completed"
         assert scan.risk_score > 0
-        assert scan.classification in ("Safe", "Suspicious", "High Risk")
+        assert scan.classification in ("Safe", "Low", "Medium", "High", "Critical")
         assert len(scan.findings) >= 1
         assert len(scan.signals) == 4
 

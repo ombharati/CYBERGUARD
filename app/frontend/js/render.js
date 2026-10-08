@@ -44,32 +44,40 @@ function formatDate(timestamp) {
 }
 
 function getScoreCaption(score) {
-  if (score >= 70) return "High Risk — Immediate Attention";
-  if (score >= 40) return "Suspicious — Further Review Recommended";
-  return "Low Risk — Routine Security Vigilance";
+  if (score >= 81) return "Critical — Emergency Containment Required";
+  if (score >= 61) return "High Risk — Immediate Action Recommended";
+  if (score >= 41) return "Medium Risk — Suspicious Anomalies Detected";
+  if (score >= 21) return "Low Risk — Minor Informational Indicators";
+  return "Safe — Baseline Security Verified";
 }
 
 function getRiskColor(classification) {
   const c = String(classification || "").toLowerCase();
-  if (c.includes("safe") || c.includes("low")) return "var(--safe, #10b981)";
-  if (c.includes("suspicious") || c.includes("medium")) return "var(--warning, #f59e0b)";
+  if (c.includes("critical")) return "var(--critical, #ef4444)";
+  if (c.includes("high")) return "var(--high, #f97316)";
+  if (c.includes("medium") || c.includes("suspicious")) return "var(--warning, #f59e0b)";
+  if (c.includes("low")) return "var(--low, #14b8a6)";
   if (c.includes("queued") || c.includes("processing")) return "var(--accent, #6366f1)";
-  return "var(--high, #ef4444)";
+  return "var(--safe, #10b981)";
 }
 
 function getStatusClass(classification) {
   const c = String(classification || "").toLowerCase();
-  if (c.includes("safe") || c.includes("low")) return "severity-low";
-  if (c.includes("suspicious") || c.includes("medium")) return "severity-medium";
+  if (c.includes("critical")) return "severity-critical";
+  if (c.includes("high")) return "severity-high";
+  if (c.includes("medium") || c.includes("suspicious")) return "severity-medium";
+  if (c.includes("low")) return "severity-low";
   if (c.includes("queued") || c.includes("processing")) return "severity-low";
-  return "severity-high";
+  return "severity-safe";
 }
 
 function getFilterClass(classification) {
   const c = String(classification || "").toLowerCase();
-  if (c.includes("safe")) return "safe";
-  if (c.includes("suspicious")) return "suspicious";
-  return "high";
+  if (c.includes("critical")) return "critical";
+  if (c.includes("high")) return "high";
+  if (c.includes("medium") || c.includes("suspicious")) return "medium";
+  if (c.includes("low")) return "low";
+  return "safe";
 }
 
 function getDisplayTarget(scan) {
@@ -503,28 +511,37 @@ function render() {
     hide(progressCard);
     show(resultCard);
 
+    const classification = activeScan.classification || "Safe";
     $("#result-title").textContent =
-      activeScan.classification === "Safe"
-        ? "No major warning signs found."
-        : activeScan.classification === "Suspicious"
-          ? "Suspicious activity detected."
-          : activeScan.classification === "Failed"
-            ? "Scan analysis encountered an error."
-            : "High-risk activity detected.";
+      classification === "Critical"
+        ? "Critical security threat detected."
+        : classification === "High"
+          ? "High-risk activity detected."
+          : classification === "Medium" || classification === "Suspicious"
+            ? "Suspicious anomalies detected."
+            : classification === "Low"
+              ? "Low risk: minor indicators noted."
+              : classification === "Failed"
+                ? "Scan analysis encountered an error."
+                : "No major warning signs found.";
 
     $("#result-summary").textContent = activeScan.summary || "";
     $("#result-score").textContent = activeScan.score ?? 0;
 
     const badge = $("#result-badge");
     if (badge) {
-      badge.textContent = activeScan.classification || "Completed";
+      badge.textContent = classification || "Completed";
       badge.className = "risk-badge";
-      if (activeScan.classification === "Safe") {
-        badge.classList.add("risk-safe");
-      } else if (activeScan.classification === "Suspicious") {
-        badge.classList.add("risk-suspicious");
-      } else {
+      if (classification === "Critical") {
+        badge.classList.add("risk-critical");
+      } else if (classification === "High" || classification === "High Risk") {
         badge.classList.add("risk-high");
+      } else if (classification === "Medium" || classification === "Suspicious") {
+        badge.classList.add("risk-medium");
+      } else if (classification === "Low") {
+        badge.classList.add("risk-low");
+      } else {
+        badge.classList.add("risk-safe");
       }
     }
 
