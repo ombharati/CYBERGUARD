@@ -1,5 +1,5 @@
 /* ==============================================================================
-   CYBERGUARD Frontend — Render Layer (Single Source of Truth)
+   CYBERGUARD Frontend - Render Layer (Single Source of Truth)
    ==============================================================================
    - Single render() reads store and updates DOM incrementally
    - Never assigns innerHTML on scan list containers
@@ -44,11 +44,11 @@ function formatDate(timestamp) {
 }
 
 function getScoreCaption(score) {
-  if (score >= 81) return "Critical — Emergency Containment Required";
-  if (score >= 61) return "High Risk — Immediate Action Recommended";
-  if (score >= 41) return "Medium Risk — Suspicious Anomalies Detected";
-  if (score >= 21) return "Low Risk — Minor Informational Indicators";
-  return "Safe — Baseline Security Verified";
+  if (score >= 81) return "Critical - Emergency Containment Required";
+  if (score >= 61) return "High Risk - Immediate Action Recommended";
+  if (score >= 41) return "Medium Risk - Suspicious Anomalies Detected";
+  if (score >= 21) return "Low Risk - Minor Informational Indicators";
+  return "Safe - Baseline Security Verified";
 }
 
 function getRiskColor(classification) {
@@ -151,7 +151,7 @@ function updateRecentRowElement(row, scan) {
     scoreSmall.className = "score-small";
     row.appendChild(scoreSmall);
   }
-  scoreSmall.textContent = scan.status === "completed" ? `${scan.score}/100` : "—";
+  scoreSmall.textContent = scan.status === "completed" ? `${scan.score}/100` : "-";
 
   let button = row.querySelector(".open-report-button");
   if (!button) {
@@ -247,7 +247,7 @@ function updateHistoryRowElement(row, scan) {
     scoreDiv.className = "score-small";
     row.appendChild(scoreDiv);
   }
-  scoreDiv.textContent = scan.status === "completed" ? `${scan.score}/100` : "—";
+  scoreDiv.textContent = scan.status === "completed" ? `${scan.score}/100` : "-";
 
   let statusDiv = row.querySelector(".status-label");
   if (!statusDiv) {
@@ -622,8 +622,8 @@ function render() {
     if (isFailed) {
       $("#result-title").textContent = activeScan.error_message || "Scan analysis encountered an error.";
       $("#result-summary").textContent = activeScan.summary || "The scan could not be completed.";
-      $("#result-score").textContent = "—";
-      $("#score-caption").textContent = "No result — scan failed";
+      $("#result-score").textContent = "-";
+      $("#score-caption").textContent = "No result - scan failed";
     } else {
       $("#result-title").textContent =
         classification === "Critical"

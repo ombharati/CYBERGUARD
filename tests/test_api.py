@@ -6,6 +6,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import os
+os.environ["ALLOWED_ORIGINS"] = "https://ombharati.github.io"
+
 from app.backend.core.database import Base, get_db
 from app.backend.main import app
 from app.backend.models.scan import Scan, ScanFinding, generate_scan_id
@@ -315,10 +318,26 @@ def test_cors_accepts_configured_origin():
         },
     )
     assert response.status_code == 200
-    assert "access-control-allow-origin" in response.headers
+    assert response.headers["access-control-allow-origin"] == "https://ombharati.github.io"
 
-@patch("app.backend.services.scan_service.enqueue_scan_id", return_value=True)
-def test_failed_scan_state(mock_enqueue):
-    # This just ensures we can parse a mock failure. But wait, we can just test the DB directly.
-    pass
+def test_failed_scan_state():
+    db = TestingSessionLocal()
+    scan = Scan(
+        id=generate_scan_id(),
+        input_type="url",
+        target="https://example.com/fail",
+        raw_input="https://example.com/fail",
+        status="failed",
+        error_message="test failure"
+    )
+    db.add(scan)
+    db.commit()
+    scan_id = scan.id
+    db.close()
 
+    res = client.get(f"/api/v1/scans/{scan_id}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "failed"
+    assert data["error_message"] == "test failure"
+    assert data.get("risk_score") is None
