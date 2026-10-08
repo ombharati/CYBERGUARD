@@ -1,19 +1,19 @@
-/*
-  CYBERGUARD frontend
-  -------------------
-  This file currently runs in MOCK MODE so the UI works without a backend.
+/* ==============================================================================
+   CYBERGUARD Frontend — State-Driven, Asynchronous Network Architecture
+   ==============================================================================
+   - Renders from state, never from a response
+   - Handlers dispatch to scheduler, never await network
+   - Single scheduler owns concurrency (max 3), timeouts (15s), abort signals
+   - Backpressured polling via setTimeout (zero setInterval)
+   - Incremental row updates via Map<id, HTMLElement> (zero innerHTML list wipes)
+   - Zero frontend URL parsing/validation (sends raw data to backend)
+   - Idempotent submission via crypto.randomUUID() & Idempotency-Key
+   - Connection state awareness: Online / Reconnecting / Offline
+   ============================================================================== */
 
-  Later, set:
-    USE_MOCK_DATA = false
-
-  and adjust:
-    API_BASE_URL
-    CREATE_SCAN_ENDPOINT
-    HISTORY_ENDPOINT
-
-  to match your FastAPI API.
-*/
-
+/* -----------------------------
+   API CONFIGURATION
+----------------------------- */
 function getApiBaseUrl() {
   const custom = localStorage.getItem("cyberguard_api_url");
   if (custom) return custom.replace(/\/+$/, "");
@@ -27,39 +27,23 @@ function getApiBaseUrl() {
 }
 
 const API_BASE_URL = getApiBaseUrl();
-const CREATE_SCAN_ENDPOINT = "/api/scans";
-const HISTORY_ENDPOINT = "/api/scans";
-
-let USE_MOCK_DATA = false;
-// auto-detect backend availability on load
-fetch(`${API_BASE_URL}/health`).then(r=>{ if(!r.ok) USE_MOCK_DATA=true; }).catch(()=>{ USE_MOCK_DATA=true; });
-
-let currentMode = "url";
-let currentResult = null;
-let currentFilter = "all";
-
-const state = {
-  scans: loadScans()
-};
 
 /* -----------------------------
-   DOM HELPERS
+   DOM SELECTORS & HELPERS
 ----------------------------- */
-
 const $ = (selector) => document.querySelector(selector);
-
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 function show(element) {
-  element.classList.remove("hidden");
+  if (element) element.classList.remove("hidden");
 }
 
 function hide(element) {
-  element.classList.add("hidden");
+  if (element) element.classList.add("hidden");
 }
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -67,814 +51,533 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-/* -----------------------------
-   NAVIGATION
------------------------------ */
-
-function switchView(viewName) {
-  $$(".view").forEach((view) => {
-    view.classList.remove("active-view");
-  });
-
-  $(`#view-${viewName}`)?.classList.add("active-view");
-
-  $$(".nav-link").forEach((button) => {
-    button.classList.toggle(
-      "active",
-      button.dataset.view === viewName
-    );
-  });
-
-  window.scrollTo({
-    top: 0,
-    behavior: "smooth"
-  });
-
-  if (viewName === "history") {
-    renderHistory();
-  }
-}
-
-$$("[data-view]").forEach((button) => {
-  button.addEventListener("click", () => {
-    switchView(button.dataset.view);
-  });
-});
-
-/* -----------------------------
-   ANALYSIS MODES
------------------------------ */
-
-$$(".mode-tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    switchMode(tab.dataset.mode);
-  });
-});
-
-function switchMode(mode) {
-  currentMode = mode;
-
-  $$(".mode-tab").forEach((tab) => {
-    tab.classList.toggle(
-      "active",
-      tab.dataset.mode === mode
-    );
-  });
-
-  $$(".mode-panel").forEach((panel) => {
-    panel.classList.remove("active-panel");
-  });
-
-  $(`#panel-${mode}`)?.classList.add("active-panel");
-
-  hide($("#error-box"));
-}
-
-/* -----------------------------
-   SAMPLE DATA
------------------------------ */
-
-$("#sample-url").addEventListener("click", () => {
-  $("#url-input").value =
-    "https://secure-login-account.example.com/verify";
-});
-
-/* -----------------------------
-   INPUT COLLECTION
------------------------------ */
-
-function collectInput() {
-  if (currentMode === "url") {
-    return {
-      type: "url",
-      value: $("#url-input").value.trim()
-    };
-  }
-
-  if (currentMode === "email") {
-    return {
-      type: "email",
-      value: {
-        sender: $("#email-sender").value.trim(),
-        subject: $("#email-subject").value.trim(),
-        body: $("#email-body").value.trim()
-      }
-    };
-  }
-
-  return {
-    type: "content",
-    value: $("#content-input").value.trim()
-  };
-}
-
-function validateInput(payload) {
-  if (payload.type === "url") {
-    if (!payload.value) {
-      return "Enter a URL to analyze.";
-    }
-
-    try {
-      const url = new URL(payload.value);
-
-      if (!["http:", "https:"].includes(url.protocol)) {
-        return "Enter a valid HTTP or HTTPS URL.";
-      }
-    } catch {
-      return "Enter a valid URL such as https://example.com.";
-    }
-  }
-
-  if (payload.type === "email") {
-    if (!payload.value.sender) {
-      return "Enter the sender address.";
-    }
-
-    if (!payload.value.subject && !payload.value.body) {
-      return "Enter an email subject or email body.";
-    }
-  }
-
-  if (payload.type === "content") {
-    if (!payload.value) {
-      return "Paste some content to analyze.";
-    }
-
-    if (payload.value.length < 10) {
-      return "Enter more content so it can be analyzed.";
-    }
-  }
-
-  return null;
-}
-
-function displayError(message) {
-  const box = $("#error-box");
-  box.textContent = message;
-  show(box);
-}
-
-/* -----------------------------
-   ANALYZE
------------------------------ */
-
-$("#analyze-button").addEventListener("click", async () => {
-  const payload = collectInput();
-  const error = validateInput(payload);
-
-  if (error) {
-    displayError(error);
-    return;
-  }
-
-  hide($("#error-box"));
-
-  hide($("#result-card"));
-  hide($("#report-card"));
-  show($("#progress-card"));
-
-  $("#analyze-button").disabled = true;
-
-  const progressCtrl = startAnalysisProgress();
+function formatDate(timestamp) {
+  if (!timestamp) return "Just now";
   try {
-    let result;
-    if (USE_MOCK_DATA) {
-      result = await runMockAnalysis(payload);
-    } else {
-      try {
-        result = await runApiAnalysis(payload);
-      } catch (apiErr) {
-        console.warn("API failed, falling back to mock:", apiErr);
-        result = await runMockAnalysis(payload);
-      }
-    }
-    progressCtrl.finish();
-
-    currentResult = result;
-
-    state.scans.unshift(result);
-    state.scans = state.scans.slice(0, 50);
-
-    saveScans();
-
-    showResult(result);
-    renderRecentScans();
-    // try refresh history from backend if available
-    try { await refreshHistoryFromApi(); } catch {}
-  } catch (error) {
-    displayError(
-      error.message || "The analysis could not be completed."
-    );
-
-    hide($("#progress-card"));
-  } finally {
-    $("#analyze-button").disabled = false;
-  }
-});
-
-/* -----------------------------
-   API HISTORY SYNC
------------------------------ */
-async function refreshHistoryFromApi(){
-  if(USE_MOCK_DATA) return;
-  try{
-    const r = await fetch(`${API_BASE_URL}${HISTORY_ENDPOINT}`);
-    if(!r.ok) return;
-    const data = await r.json();
-    if(Array.isArray(data) && data.length){
-      // merge: keep API results at top, dedup by id
-      const ids = new Set(data.map(d=>d.id));
-      const remaining = state.scans.filter(s=>!ids.has(s.id));
-      state.scans = [...data, ...remaining].slice(0,50);
-      saveScans();
-      renderRecentScans();
-    }
-  }catch{}
-}
-
-/* -----------------------------
-   MOCK ANALYSIS
------------------------------ */
-
-async function runMockAnalysis(payload) {
-  await wait(800);
-  let result;
-  if (payload.type === "url") {
-    result = createMockUrlResult(payload);
-  } else if (payload.type === "email") {
-    result = createMockEmailResult(payload);
-  } else {
-    result = createMockContentResult(payload);
-  }
-  return result;
-}
-
-function startAnalysisProgress() {
-  const steps = $$(".analysis-step");
-  const started = performance.now();
-  let finished = false;
-
-  // Initialize all steps
-  steps.forEach((step, idx) => {
-    step.classList.remove("current");
-    const stateText = step.querySelector(".step-state");
-    if (stateText) stateText.textContent = idx === 0 ? "Working" : "Waiting";
-  });
-  if (steps[0]) steps[0].classList.add("current");
-  $("#progress-time").textContent = "0.0s";
-
-  const timer = setInterval(() => {
-    if (finished) return;
-    const elapsed = (performance.now() - started) / 1000;
-    $("#progress-time").textContent = `${elapsed.toFixed(1)}s`;
-
-    // Realistically advance steps according to backend execution stages:
-    // 0-0.5s: Deterministic Analysis
-    // 0.5-2.0s: Laya Neural URL Model
-    // 2.0s+: Qwen Semantic Reasoning
-    let activeIdx = 0;
-    if (elapsed > 2.0) {
-      activeIdx = 2; // Qwen reasoning
-    } else if (elapsed > 0.5) {
-      activeIdx = 1; // Laya neural model
-    }
-
-    steps.forEach((step, stepIndex) => {
-      step.classList.toggle("current", stepIndex === activeIdx);
-      const stateText = step.querySelector(".step-state");
-      if (stateText) {
-        if (stepIndex < activeIdx) stateText.textContent = "Done";
-        else if (stepIndex === activeIdx) stateText.textContent = "Working";
-        else stateText.textContent = "Waiting";
-      }
-    });
-  }, 100);
-
-  return {
-    finish: () => {
-      finished = true;
-      clearInterval(timer);
-      steps.forEach((step) => {
-        step.classList.remove("current");
-        const stateText = step.querySelector(".step-state");
-        if (stateText) stateText.textContent = "Done";
-      });
-      const elapsed = (performance.now() - started) / 1000;
-      $("#progress-time").textContent = `${elapsed.toFixed(1)}s`;
-    }
-  };
-}
-
-/* -----------------------------
-   MOCK RESULT GENERATORS
------------------------------ */
-
-function createMockUrlResult(payload) {
-  const target = payload.value;
-
-  let score = 18;
-  const findings = [];
-
-  let hostname = "";
-
-  try {
-    const url = new URL(target);
-    hostname = url.hostname;
-
-    if (
-      hostname.includes("secure") ||
-      hostname.includes("verify") ||
-      hostname.includes("login")
-    ) {
-      score += 18;
-
-      findings.push({
-        severity: "medium",
-        title: "Security-sensitive URL wording",
-        description:
-          "The hostname contains words commonly associated with account verification or authentication flows."
-      });
-    }
-
-    if (
-      target.length > 70
-    ) {
-      score += 12;
-
-      findings.push({
-        severity: "low",
-        title: "Unusually long URL",
-        description:
-          "Long URLs can make the actual destination harder to recognize and can hide additional path or query information."
-      });
-    }
-
-    if (
-      hostname.split(".").length >= 4
-    ) {
-      score += 16;
-
-      findings.push({
-        severity: "medium",
-        title: "Deep subdomain structure",
-        description:
-          "The hostname contains multiple nested subdomains, which can make a destination harder to interpret."
-      });
-    }
-
-    if (
-      /(^|\.)example\.com$/i.test(hostname)
-    ) {
-      score += 14;
-    }
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(new Date(timestamp));
   } catch {
-    score += 5;
+    return "Recent";
   }
-
-  score = Math.min(score, 92);
-
-  if (findings.length === 0) {
-    findings.push({
-      severity: "low",
-      title: "No strong suspicious indicators",
-      description:
-        "The available first-pass checks did not identify major warning signs in this URL."
-    });
-  }
-
-  return buildResult({
-    type: "URL",
-    target,
-    score,
-    findings,
-    summary:
-      score >= 75
-        ? "The submitted URL contains several high-risk indicators that deserve immediate attention."
-        : score >= 45
-          ? "The submitted URL contains several signals that deserve further investigation."
-          : "The submitted URL does not show strong suspicious indicators in this first-pass analysis."
-  });
 }
 
-function createMockEmailResult(payload) {
-  const { sender, subject, body } = payload.value;
-
-  const combined = `${sender} ${subject} ${body}`.toLowerCase();
-
-  let score = 15;
-  const findings = [];
-
-  const urgencyWords = [
-    "urgent",
-    "immediately",
-    "suspended",
-    "verify",
-    "action required",
-    "expires",
-    "within 24"
-  ];
-
-  if (urgencyWords.some((word) => combined.includes(word))) {
-    score += 24;
-
-    findings.push({
-      severity: "medium",
-      title: "Urgency language detected",
-      description:
-        "The message contains language intended to encourage immediate action."
-    });
-  }
-
-  const credentialWords = [
-    "password",
-    "login",
-    "credential",
-    "verification",
-    "sign in",
-    "account"
-  ];
-
-  if (credentialWords.some((word) => combined.includes(word))) {
-    score += 26;
-
-    findings.push({
-      severity: "high",
-      title: "Credential-related language",
-      description:
-        "The message references authentication or account information."
-    });
-  }
-
-  if (
-    sender &&
-    !sender.includes("@")
-  ) {
-    score += 10;
-
-    findings.push({
-      severity: "low",
-      title: "Unusual sender format",
-      description:
-        "The sender field does not look like a standard email address."
-    });
-  }
-
-  if (
-    combined.includes("click") ||
-    combined.includes("link")
-  ) {
-    score += 13;
-
-    findings.push({
-      severity: "medium",
-      title: "Action-oriented request",
-      description:
-        "The message appears to direct the recipient toward an external action."
-    });
-  }
-
-  score = Math.min(score, 95);
-
-  if (findings.length === 0) {
-    findings.push({
-      severity: "low",
-      title: "No strong indicators found",
-      description:
-        "The initial content checks did not identify major suspicious patterns."
-    });
-  }
-
-  return buildResult({
-    type: "Email",
-    target: `From: ${sender || "Unknown"}\nSubject: ${subject || "No subject"}\n\n${body}`,
-    score,
-    findings,
-    summary:
-      score >= 75
-        ? "This message contains high-risk patterns strongly indicative of potential phishing or credential harvesting."
-        : score >= 45
-          ? "This message contains language and behavior patterns that may warrant further investigation."
-          : "The submitted message does not show strong suspicious indicators in this first-pass analysis."
-  });
+function getScoreCaption(score) {
+  if (score >= 70) return "High Risk — Immediate Attention";
+  if (score >= 40) return "Suspicious — Further Review Recommended";
+  return "Low Risk — Routine Security Vigilance";
 }
 
-function createMockContentResult(payload) {
-  const text = payload.value.toLowerCase();
-
-  let score = 12;
-  const findings = [];
-
-  if (
-    text.includes("password") ||
-    text.includes("credential") ||
-    text.includes("login")
-  ) {
-    score += 24;
-
-    findings.push({
-      severity: "medium",
-      title: "Authentication-related content",
-      description:
-        "The content contains references to credentials or authentication."
-    });
-  }
-
-  if (
-    text.includes("urgent") ||
-    text.includes("immediately") ||
-    text.includes("suspended")
-  ) {
-    score += 23;
-
-    findings.push({
-      severity: "medium",
-      title: "Urgency language",
-      description:
-        "The content uses pressure-based language that can occur in social-engineering attempts."
-    });
-  }
-
-  if (
-    text.includes("http://") ||
-    text.includes("https://")
-  ) {
-    score += 14;
-
-    findings.push({
-      severity: "low",
-      title: "External link detected",
-      description:
-        "The content contains a URL that can be analyzed separately for additional context."
-    });
-  }
-
-  if (
-    text.includes("verify your account") ||
-    text.includes("confirm your account")
-  ) {
-    score += 18;
-
-    findings.push({
-      severity: "high",
-      title: "Account verification request",
-      description:
-        "The content requests account verification, which can be relevant to phishing analysis."
-    });
-  }
-
-  score = Math.min(score, 92);
-
-  if (findings.length === 0) {
-    findings.push({
-      severity: "low",
-      title: "No strong suspicious indicators",
-      description:
-        "The initial content checks did not identify major warning signs."
-    });
-  }
-
-  return buildResult({
-    type: "Content",
-    target: payload.value,
-    score,
-    findings,
-    summary:
-      score >= 75
-        ? "The content contains high-risk patterns commonly associated with deceptive or malicious requests."
-        : score >= 45
-          ? "The content contains several patterns that deserve additional security analysis."
-          : "The content does not show strong suspicious indicators in this first-pass analysis."
-  });
+function getRiskColor(classification) {
+  const c = String(classification || "").toLowerCase();
+  if (c.includes("safe") || c.includes("low")) return "var(--safe, #10b981)";
+  if (c.includes("suspicious") || c.includes("medium")) return "var(--warning, #f59e0b)";
+  if (c.includes("queued") || c.includes("processing")) return "var(--accent, #6366f1)";
+  return "var(--high, #ef4444)";
 }
 
-function buildResult({
-  type,
-  target,
-  score,
-  findings,
-  summary
-}) {
-  const classification =
-    score >= 75
-      ? "High Risk"
-      : score >= 45
-        ? "Suspicious"
-        : "Safe";
+function getStatusClass(classification) {
+  const c = String(classification || "").toLowerCase();
+  if (c.includes("safe") || c.includes("low")) return "severity-low";
+  if (c.includes("suspicious") || c.includes("medium")) return "severity-medium";
+  if (c.includes("queued") || c.includes("processing")) return "severity-low";
+  return "severity-high";
+}
 
-  const signals = [
-    {
-      name: "Pattern analysis",
-      value: Math.min(score + 4, 100)
-    },
-    {
-      name: "Content indicators",
-      value: Math.min(score + 1, 100)
-    },
-    {
-      name: "Risk aggregation",
-      value: score
-    },
-    {
-      name: "Reputation signals",
-      value: Math.max(score - 16, 8)
-    }
-  ];
+function getFilterClass(classification) {
+  const c = String(classification || "").toLowerCase();
+  if (c.includes("safe")) return "safe";
+  if (c.includes("suspicious")) return "suspicious";
+  return "high";
+}
 
-  return {
-    id: generateScanId(),
-    type,
-    target,
-    score,
-    classification,
-    summary,
-    findings,
-    signals,
-    explanation:
-      classification === "Safe"
-        ? "The available first-pass checks did not find strong evidence of malicious or deceptive behavior. This does not guarantee that the input is completely safe."
-        : "The analysis found multiple signals that may indicate suspicious or deceptive behavior. Treat the input carefully and review the evidence before interacting with it.",
-    timestamp: new Date().toISOString()
-  };
+function getDisplayTarget(scan) {
+  if (!scan || !scan.target) return "Unknown target";
+  return String(scan.target)
+    .replace(/^From:\s*/i, "")
+    .split("\n")[0]
+    .slice(0, 80);
 }
 
 /* -----------------------------
-   REAL API MODE
+   CENTRAL STORE & STATE
 ----------------------------- */
-
-async function runApiAnalysis(payload) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
-
+function loadScansFromStorage() {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}${CREATE_SCAN_ENDPOINT}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          input_type: payload.type,
-          data: payload.value
-        }),
-        signal: controller.signal
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        `Backend returned HTTP ${response.status}.`
-      );
-    }
-
-    const data = await response.json();
-    return data;
-  } finally {
-    clearTimeout(timeoutId);
+    const raw = localStorage.getItem("cyberguard_scans");
+    if (!raw) return createInitialScans();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : createInitialScans();
+  } catch {
+    return createInitialScans();
   }
 }
 
-  /*
-    Expected normalized response:
-
+function createInitialScans() {
+  return [
     {
-      id: "CG-001",
+      id: "CG-INIT001",
       type: "URL",
-      target: "...",
-      score: 72,
-      classification: "Suspicious",
-      summary: "...",
+      target: "https://example.com",
+      status: "completed",
+      score: 12,
+      classification: "Safe",
+      summary: "The URL does not show strong suspicious indicators in baseline analysis.",
       findings: [
         {
-          severity: "medium",
-          title: "...",
-          description: "..."
+          severity: "low",
+          title: "Clean Structural Inspection",
+          description: "First-pass deterministic URL inspection found no overt structural red flags."
         }
       ],
       signals: [
-        {
-          name: "Pattern analysis",
-          value: 72
-        }
+        { name: "Pattern analysis", value: 12 },
+        { name: "Content indicators", value: 10 },
+        { name: "Risk aggregation", value: 12 }
       ],
-      explanation: "...",
-      timestamp: "2026-09-22T..."
+      explanation: "No malicious indicators were triggered during deterministic inspection.",
+      report_text: "1. What was analyzed\nInput type: URL\nTarget: https://example.com\n\n2. Verdict\nSafe (12/100)",
+      report_generated_by: "template",
+      timestamp: new Date().toISOString()
     }
+  ];
+}
 
-    Adapt this mapping once your FastAPI response schema is final.
-  */
+const store = {
+  scans: loadScansFromStorage(),
+  activeScanId: null,
+  currentMode: "url",
+  currentView: "analyze",
+  currentFilter: "all",
+  connection: navigator.onLine ? "online" : "offline",
+  error: null
+};
 
-  return data;
+// If there are existing scans, default the active scan to the most recent one
+if (store.scans.length > 0) {
+  store.activeScanId = store.scans[0].id;
+}
+
+function updateStore(mutationFn) {
+  mutationFn(store);
+  try {
+    localStorage.setItem("cyberguard_scans", JSON.stringify(store.scans.slice(0, 50)));
+  } catch {}
+  render();
 }
 
 /* -----------------------------
-   RESULT RENDERING
+   NETWORK SCHEDULER
+   - Global concurrency cap (3)
+   - Per-request timeout via AbortController (15s)
+   - Exponential backoff on transient failure
+   - Cancellation on visibilitychange/navigation
 ----------------------------- */
-
-function showResult(result) {
-  hide($("#progress-card"));
-  hide($("#report-card"));
-  show($("#result-card"));
-
-  $("#result-title").textContent =
-    result.classification === "Safe"
-      ? "No major warning signs found."
-      : result.classification === "Suspicious"
-        ? "Suspicious activity detected."
-        : "High-risk activity detected.";
-
-  $("#result-summary").textContent = result.summary;
-
-  $("#result-score").textContent = result.score;
-
-  const badge = $("#result-badge");
-  badge.textContent = result.classification;
-  badge.className = "risk-badge";
-
-  if (result.classification === "Safe") {
-    badge.classList.add("risk-safe");
-  } else if (result.classification === "Suspicious") {
-    badge.classList.add("risk-suspicious");
-  } else {
-    badge.classList.add("risk-high");
+class NetworkScheduler {
+  constructor(concurrency = 3, defaultTimeoutMs = 15000) {
+    this.concurrency = concurrency;
+    this.defaultTimeoutMs = defaultTimeoutMs;
+    this.queue = [];
+    this.activeCount = 0;
+    this.activeControllers = new Set();
+    this.failureStreak = 0;
   }
 
-  const ring = $("#score-ring");
-  ring.style.setProperty(
-    "--score-deg",
-    `${result.score * 3.6}deg`
-  );
-
-  ring.style.setProperty(
-    "--score-color",
-    getRiskColor(result.classification)
-  );
-
-  $("#score-caption").textContent =
-    getScoreCaption(result.score);
-
-  $("#finding-count").textContent =
-    `${result.findings.length} finding${result.findings.length === 1 ? "" : "s"}`;
-
-  $("#findings-list").innerHTML =
-    result.findings.map(renderFinding).join("");
-
-  $("#signals-list").innerHTML =
-    result.signals.map(renderSignal).join("");
-
-  $("#result-id").textContent = result.id;
-  $("#result-type").textContent = result.type;
-  $("#result-time").textContent = formatDate(result.timestamp);
-
-  currentResult = result;
-
-  const exportBtn = $("#export-report-btn");
-  if (exportBtn) {
-    if (result.status === "completed" || result.score !== undefined) {
-      exportBtn.classList.remove("hidden");
-    } else {
-      exportBtn.classList.add("hidden");
-    }
+  enqueue(taskFn, { priority = 0, signal = null, timeout = this.defaultTimeoutMs } = {}) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        taskFn,
+        priority,
+        signal,
+        timeout,
+        resolve,
+        reject,
+        retries: 0
+      });
+      this.queue.sort((a, b) => b.priority - a.priority);
+      this.pump();
+    });
   }
 
-  // Poll for background Qwen narrative report upgrade if initial was template
-  if (result.report_generated_by === "template" && result.id) {
-    pollNarrativeReportUpgrade(result.id);
-  }
-
-  window.scrollTo({
-    top: $("#result-card").offsetTop - 90,
-    behavior: "smooth"
-  });
-}
-
-function pollNarrativeReportUpgrade(scanId) {
-  if (!scanId || USE_MOCK_DATA) return;
-  let attempts = 0;
-  const interval = setInterval(async () => {
-    attempts++;
-    if (attempts > 12 || !currentResult || currentResult.id !== scanId) {
-      clearInterval(interval);
+  pump() {
+    if (this.activeCount >= this.concurrency || this.queue.length === 0) {
       return;
     }
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/scans/${encodeURIComponent(scanId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.report_generated_by === "qwen" && data.report_text) {
-          clearInterval(interval);
-          if (currentResult && currentResult.id === scanId) {
-            currentResult.report_text = data.report_text;
-            currentResult.report_generated_by = "qwen";
-            const narrativeBody = $("#narrative-report-body");
-            const genTag = $("#narrative-generated-by");
-            if (narrativeBody) narrativeBody.textContent = data.report_text.trim();
-            if (genTag) genTag.textContent = "Qwen AI Narrative";
+
+    const item = this.queue.shift();
+    this.activeCount++;
+
+    const controller = new AbortController();
+    this.activeControllers.add(controller);
+
+    const timeoutId = setTimeout(() => {
+      controller.abort("Request timeout");
+    }, item.timeout);
+
+    if (item.signal) {
+      item.signal.addEventListener("abort", () => controller.abort(item.signal.reason), { once: true });
+    }
+
+    item.taskFn(controller.signal)
+      .then((result) => {
+        clearTimeout(timeoutId);
+        this.failureStreak = 0;
+        if (store.connection !== "online" && navigator.onLine) {
+          updateStore((s) => { s.connection = "online"; });
+        }
+        item.resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        const isAbort = controller.signal.aborted;
+
+        if (!isAbort && item.retries < 2 && navigator.onLine) {
+          item.retries++;
+          this.failureStreak++;
+          if (this.failureStreak >= 2) {
+            updateStore((s) => { s.connection = "reconnecting"; });
+          }
+          const backoffDelay = Math.min(1000 * Math.pow(2, item.retries), 10000);
+          setTimeout(() => {
+            this.queue.unshift(item);
+            this.pump();
+          }, backoffDelay);
+        } else {
+          if (!isAbort && !navigator.onLine) {
+            updateStore((s) => { s.connection = "offline"; });
+          }
+          item.reject(error);
+        }
+      })
+      .finally(() => {
+        this.activeControllers.delete(controller);
+        this.activeCount--;
+        this.pump();
+      });
+
+    this.pump();
+  }
+
+  cancelAll(reason = "Scheduler cancellation") {
+    for (const controller of this.activeControllers) {
+      try {
+        controller.abort(reason);
+      } catch {}
+    }
+    this.activeControllers.clear();
+    while (this.queue.length > 0) {
+      const item = this.queue.shift();
+      item.reject(new DOMException("Cancelled by scheduler", "AbortError"));
+    }
+    this.activeCount = 0;
+  }
+}
+
+const scheduler = new NetworkScheduler(3, 15000);
+
+/* -----------------------------
+   BACKPRESSURED POLLING LOOP
+   - Single poll loop using setTimeout
+   - Polls queued/processing scans
+   - Drops terminal scans permanently
+   - Widens interval & flips connection on repeated errors
+----------------------------- */
+let pollTimerId = null;
+let pollIntervalMs = 2000;
+let consecutivePollFailures = 0;
+let isPollLoopRunning = false;
+
+function scheduleNextPoll(delay = pollIntervalMs) {
+  if (pollTimerId) clearTimeout(pollTimerId);
+  pollTimerId = setTimeout(runPollIteration, delay);
+}
+
+async function runPollIteration() {
+  if (isPollLoopRunning) return;
+  isPollLoopRunning = true;
+
+  try {
+    const pendingScans = store.scans.filter(
+      (s) => s.status === "queued" || s.status === "processing"
+    );
+
+    const activeScan = store.scans.find((s) => s.id === store.activeScanId);
+    const needNarrative =
+      activeScan &&
+      activeScan.status === "completed" &&
+      activeScan.report_generated_by === "template" &&
+      (activeScan._narrativePollAttempts || 0) < 10;
+
+    if (pendingScans.length === 0 && !needNarrative) {
+      pollIntervalMs = 2000;
+      isPollLoopRunning = false;
+      return;
+    }
+
+    const scansToPoll = [...pendingScans];
+    if (needNarrative && !scansToPoll.some((s) => s.id === activeScan.id)) {
+      scansToPoll.push(activeScan);
+    }
+
+    for (const scan of scansToPoll) {
+      try {
+        const updated = await scheduler.enqueue(
+          (signal) =>
+            fetch(`${API_BASE_URL}/api/v1/scans/${encodeURIComponent(scan.id)}`, { signal }).then(
+              (r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+              }
+            ),
+          { priority: 1, timeout: 10000 }
+        );
+
+        consecutivePollFailures = 0;
+        pollIntervalMs = 2000;
+        if (store.connection !== "online" && navigator.onLine) {
+          updateStore((s) => { s.connection = "online"; });
+        }
+
+        updateStore((s) => {
+          const idx = s.scans.findIndex((item) => item.id === scan.id);
+          if (idx !== -1) {
+            const prev = s.scans[idx];
+            s.scans[idx] = {
+              ...prev,
+              ...updated,
+              _narrativePollAttempts: (prev._narrativePollAttempts || 0) + 1
+            };
+          }
+        });
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          consecutivePollFailures++;
+          if (consecutivePollFailures >= 2) {
+            pollIntervalMs = Math.min(pollIntervalMs * 1.5, 10000);
+            updateStore((s) => { s.connection = "reconnecting"; });
           }
         }
       }
-    } catch {}
-  }, 3000);
+    }
+  } finally {
+    isPollLoopRunning = false;
+    const stillPending = store.scans.some(
+      (s) => s.status === "queued" || s.status === "processing"
+    );
+    const activeScan = store.scans.find((s) => s.id === store.activeScanId);
+    const needNarrative =
+      activeScan &&
+      activeScan.status === "completed" &&
+      activeScan.report_generated_by === "template" &&
+      (activeScan._narrativePollAttempts || 0) < 10;
+
+    if (stillPending || needNarrative) {
+      scheduleNextPoll(pollIntervalMs);
+    }
+  }
+}
+
+/* -----------------------------
+   INCREMENTAL DOM RENDERING
+   - Maintain Map<id, HTMLElement>
+   - Zero innerHTML assignment on list containers
+----------------------------- */
+const recentRowMap = new Map();
+const historyRowMap = new Map();
+
+function updateRecentRowElement(row, scan) {
+  row.dataset.scanId = scan.id;
+
+  let main = row.querySelector(".recent-main");
+  if (!main) {
+    main = document.createElement("div");
+    main.className = "recent-main";
+    main.innerHTML = `<strong></strong><span></span>`;
+    row.appendChild(main);
+  }
+  const strong = main.querySelector("strong");
+  const span = main.querySelector("span");
+  if (strong) strong.textContent = getDisplayTarget(scan);
+  if (span) span.textContent = `${scan.type} · ${formatDate(scan.timestamp)}`;
+
+  let statusLabel = row.querySelector(".status-label");
+  if (!statusLabel) {
+    statusLabel = document.createElement("span");
+    statusLabel.className = "status-label";
+    row.appendChild(statusLabel);
+  }
+  statusLabel.className = `status-label ${getStatusClass(scan.classification)}`;
+  statusLabel.textContent = scan.classification || (scan.status === "processing" ? "Analyzing" : "Queued");
+
+  let scoreSmall = row.querySelector(".score-small");
+  if (!scoreSmall) {
+    scoreSmall = document.createElement("span");
+    scoreSmall.className = "score-small";
+    row.appendChild(scoreSmall);
+  }
+  scoreSmall.textContent = scan.status === "completed" ? `${scan.score}/100` : "—";
+
+  let button = row.querySelector(".open-report-button");
+  if (!button) {
+    button = document.createElement("button");
+    button.className = "open-report-button";
+    button.type = "button";
+    button.textContent = "Open report →";
+    row.appendChild(button);
+  }
+  button.dataset.reportId = scan.id;
+}
+
+function renderRecentScansIncremental() {
+  const container = $("#recent-scans");
+  if (!container) return;
+
+  const currentScans = store.scans.slice(0, 5);
+  if (currentScans.length === 0) {
+    if (!container.querySelector(".no-scans-item")) {
+      container.innerHTML = `
+        <div class="recent-item no-scans-item">
+          <div class="recent-main">
+            <strong>No scans yet</strong>
+            <span>Your latest analysis will appear here.</span>
+          </div>
+        </div>
+      `;
+      recentRowMap.clear();
+    }
+    return;
+  }
+
+  const placeholder = container.querySelector(".no-scans-item");
+  if (placeholder) placeholder.remove();
+
+  const currentIds = new Set(currentScans.map((s) => s.id));
+  for (const [id, element] of recentRowMap.entries()) {
+    if (!currentIds.has(id)) {
+      element.remove();
+      recentRowMap.delete(id);
+    }
+  }
+
+  currentScans.forEach((scan, index) => {
+    let row = recentRowMap.get(scan.id);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "recent-item";
+      recentRowMap.set(scan.id, row);
+    }
+    updateRecentRowElement(row, scan);
+
+    const childAtIndex = container.children[index];
+    if (childAtIndex !== row) {
+      container.insertBefore(row, childAtIndex || null);
+    }
+  });
+}
+
+function updateHistoryRowElement(row, scan) {
+  row.dataset.scanId = scan.id;
+
+  let targetDiv = row.querySelector(".history-target");
+  if (!targetDiv) {
+    targetDiv = document.createElement("div");
+    targetDiv.className = "history-target";
+    targetDiv.innerHTML = `<strong></strong><span></span>`;
+    row.appendChild(targetDiv);
+  }
+  const strong = targetDiv.querySelector("strong");
+  const span = targetDiv.querySelector("span");
+  if (strong) strong.textContent = getDisplayTarget(scan);
+  if (span) span.textContent = scan.id;
+
+  let labelDiv = row.querySelector(".history-cell-label");
+  if (!labelDiv) {
+    labelDiv = document.createElement("div");
+    labelDiv.className = "history-cell-label";
+    row.appendChild(labelDiv);
+  }
+  labelDiv.textContent = scan.type;
+
+  let scoreDiv = row.querySelector(".score-small");
+  if (!scoreDiv) {
+    scoreDiv = document.createElement("div");
+    scoreDiv.className = "score-small";
+    row.appendChild(scoreDiv);
+  }
+  scoreDiv.textContent = scan.status === "completed" ? `${scan.score}/100` : "—";
+
+  let statusDiv = row.querySelector(".status-label");
+  if (!statusDiv) {
+    statusDiv = document.createElement("div");
+    statusDiv.className = "status-label";
+    row.appendChild(statusDiv);
+  }
+  statusDiv.className = `status-label ${getStatusClass(scan.classification)}`;
+  statusDiv.textContent = scan.classification || (scan.status === "processing" ? "Analyzing" : "Queued");
+
+  let actionBtn = row.querySelector(".history-action");
+  if (!actionBtn) {
+    actionBtn = document.createElement("button");
+    actionBtn.className = "history-action";
+    actionBtn.type = "button";
+    actionBtn.textContent = "Report →";
+    row.appendChild(actionBtn);
+  }
+  actionBtn.dataset.reportId = scan.id;
+}
+
+function renderHistoryIncremental() {
+  const container = $("#history-list");
+  if (!container) return;
+
+  const filtered =
+    store.currentFilter === "all"
+      ? store.scans
+      : store.scans.filter(
+          (scan) => getFilterClass(scan.classification) === store.currentFilter
+        );
+
+  if (!filtered.length) {
+    if (!container.querySelector(".no-history-item")) {
+      container.innerHTML = `
+        <div class="history-row no-history-item">
+          <div class="history-target">
+            <strong>No matching scans</strong>
+            <span>Run a new analysis to add a result here.</span>
+          </div>
+        </div>
+      `;
+      historyRowMap.clear();
+    }
+    return;
+  }
+
+  const placeholder = container.querySelector(".no-history-item");
+  if (placeholder) placeholder.remove();
+
+  const currentIds = new Set(filtered.map((s) => s.id));
+  for (const [id, element] of historyRowMap.entries()) {
+    if (!currentIds.has(id)) {
+      element.remove();
+      historyRowMap.delete(id);
+    }
+  }
+
+  filtered.forEach((scan, index) => {
+    let row = historyRowMap.get(scan.id);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "history-row";
+      historyRowMap.set(scan.id, row);
+    }
+    updateHistoryRowElement(row, scan);
+
+    const childAtIndex = container.children[index];
+    if (childAtIndex !== row) {
+      container.insertBefore(row, childAtIndex || null);
+    }
+  });
 }
 
 function renderFinding(finding) {
@@ -885,9 +588,7 @@ function renderFinding(finding) {
           ${escapeHtml(finding.severity)}
         </span>
       </div>
-
       <h4>${escapeHtml(finding.title)}</h4>
-
       <p>${escapeHtml(finding.description)}</p>
     </article>
   `;
@@ -897,141 +598,208 @@ function renderSignal(signal) {
   return `
     <div class="signal-row">
       <span class="signal-name">${escapeHtml(signal.name)}</span>
-
-      <div class="signal-track">
-        <div
-          class="signal-fill"
-          style="width: ${Math.max(0, Math.min(100, signal.value))}%"
-        ></div>
+      <div class="signal-meter">
+        <div class="signal-fill" style="width: ${Math.min(100, Math.max(0, signal.value || 0))}%"></div>
       </div>
-
-      <span class="signal-value">${Math.round(signal.value)}%</span>
+      <span class="signal-val">${signal.value || 0}%</span>
     </div>
   `;
 }
 
 function getSeverityClass(severity) {
-  if (severity === "high") {
-    return "severity-high";
-  }
-
-  if (severity === "medium") {
-    return "severity-medium";
-  }
-
+  const s = String(severity || "").toLowerCase();
+  if (s === "high") return "severity-high";
+  if (s === "medium") return "severity-medium";
   return "severity-low";
 }
 
-function getRiskColor(classification) {
-  if (classification === "Safe") {
-    return "#147d55";
-  }
-
-  if (classification === "Suspicious") {
-    return "#a86b00";
-  }
-
-  return "#b42318";
-}
-
-function getScoreCaption(score) {
-  if (score < 45) {
-    return "Low indication of suspicious behavior from the current analysis.";
-  }
-
-  if (score < 75) {
-    return "Several indicators were detected and should be reviewed.";
-  }
-
-  return "Multiple risk indicators were detected and deserve careful review.";
-}
-
 /* -----------------------------
-   REPORT
+   CENTRAL RENDER FUNCTION
+   - Pure function of store state
+   - Never awaits a promise to decide what to paint
 ----------------------------- */
-
-$("#open-report").addEventListener("click", () => {
-  if (!currentResult) {
-    return;
+function render() {
+  // 1. Connection status pill
+  const pillText = $("#connection-text");
+  const pillDot = $("#connection-dot");
+  if (pillText && pillDot) {
+    if (store.connection === "online") {
+      pillText.textContent = "Online";
+      pillDot.className = "state-dot online";
+    } else if (store.connection === "reconnecting") {
+      pillText.textContent = "Reconnecting…";
+      pillDot.className = "state-dot reconnecting";
+    } else {
+      pillText.textContent = "Offline";
+      pillDot.className = "state-dot offline";
+    }
   }
 
-  renderReport(currentResult);
+  // 2. Error box
+  const errorBox = $("#error-box");
+  if (errorBox) {
+    if (store.error) {
+      errorBox.textContent = store.error;
+      show(errorBox);
+    } else {
+      hide(errorBox);
+    }
+  }
 
-  hide($("#result-card"));
-  show($("#report-card"));
+  // 3. Navigation View
+  $$(".view").forEach((v) => v.classList.remove("active-view"));
+  $(`#view-${store.currentView}`)?.classList.add("active-view");
 
-  window.scrollTo({
-    top: $("#report-card").offsetTop - 90,
-    behavior: "smooth"
+  $$(".nav-link").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === store.currentView);
   });
-});
 
-$("#close-report").addEventListener("click", () => {
-  hide($("#report-card"));
-  show($("#result-card"));
-
-  window.scrollTo({
-    top: $("#result-card").offsetTop - 90,
-    behavior: "smooth"
+  // 4. Input Mode tabs & panels
+  $$(".mode-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.mode === store.currentMode);
   });
-});
+  $$(".mode-panel").forEach((panel) => panel.classList.remove("active-panel"));
+  $(`#panel-${store.currentMode}`)?.classList.add("active-panel");
 
-function renderReport(result) {
-  $("#report-heading").textContent =
-    `${result.type} security report`;
+  // 5. Active Result / Progress Presentation
+  const activeScan = store.scans.find((s) => s.id === store.activeScanId);
+  const resultCard = $("#result-card");
+  const progressCard = $("#progress-card");
+  const reportCard = $("#report-card");
 
-  $("#report-status-dot").style.background =
-    getRiskColor(result.classification);
+  if (!activeScan) {
+    hide(progressCard);
+    hide(resultCard);
+    hide(reportCard);
+  } else if (activeScan.status === "queued" || activeScan.status === "processing") {
+    // Show non-blocking progress card
+    show(progressCard);
+    hide(resultCard);
+    hide(reportCard);
 
-  $("#report-classification").textContent =
-    result.classification;
+    const progressTime = $("#progress-time");
+    if (progressTime) {
+      progressTime.textContent = activeScan.status === "processing" ? "Analyzing" : "Queued";
+    }
 
-  $("#report-status-text").textContent =
-    getScoreCaption(result.score);
+    // Step indicators
+    const steps = $$(".analysis-step");
+    steps.forEach((step, idx) => {
+      const isCurrent = activeScan.status === "queued" ? idx === 0 : idx === 1;
+      step.classList.toggle("current", isCurrent);
+      const stateText = step.querySelector(".step-state");
+      if (stateText) {
+        if (activeScan.status === "queued") {
+          stateText.textContent = idx === 0 ? "Queued" : "Waiting";
+        } else {
+          stateText.textContent = idx === 0 ? "Done" : idx === 1 ? "Working" : "Waiting";
+        }
+      }
+    });
+  } else {
+    // Terminal state: show result card
+    hide(progressCard);
+    show(resultCard);
 
-  $("#report-score").textContent =
-    `${result.score} / 100`;
+    $("#result-title").textContent =
+      activeScan.classification === "Safe"
+        ? "No major warning signs found."
+        : activeScan.classification === "Suspicious"
+          ? "Suspicious activity detected."
+          : activeScan.classification === "Failed"
+            ? "Scan analysis encountered an error."
+            : "High-risk activity detected.";
 
-  $("#report-target").textContent =
-    result.target;
+    $("#result-summary").textContent = activeScan.summary || "";
+    $("#result-score").textContent = activeScan.score ?? 0;
 
-  $("#report-explanation").textContent =
-    result.explanation;
+    const badge = $("#result-badge");
+    if (badge) {
+      badge.textContent = activeScan.classification || "Completed";
+      badge.className = "risk-badge";
+      if (activeScan.classification === "Safe") {
+        badge.classList.add("risk-safe");
+      } else if (activeScan.classification === "Suspicious") {
+        badge.classList.add("risk-suspicious");
+      } else {
+        badge.classList.add("risk-high");
+      }
+    }
 
-  $("#report-id").textContent =
-    result.id;
+    const ring = $("#score-ring");
+    if (ring) {
+      ring.style.setProperty("--score-deg", `${(activeScan.score ?? 0) * 3.6}deg`);
+      ring.style.setProperty("--score-color", getRiskColor(activeScan.classification));
+    }
 
-  $("#report-type").textContent =
-    result.type;
+    $("#score-caption").textContent = getScoreCaption(activeScan.score ?? 0);
 
-  $("#report-time").textContent =
-    formatDate(result.timestamp);
+    const findings = activeScan.findings || [];
+    $("#finding-count").textContent = `${findings.length} finding${findings.length === 1 ? "" : "s"}`;
+    $("#findings-list").innerHTML = findings.map(renderFinding).join("");
 
-  $("#report-classification-2").textContent =
-    result.classification;
+    const signals = activeScan.signals || [];
+    $("#signals-list").innerHTML = signals.map(renderSignal).join("");
 
-  $("#report-evidence").innerHTML =
-    result.findings
+    $("#result-id").textContent = activeScan.id;
+    $("#result-type").textContent = activeScan.type;
+    $("#result-time").textContent = formatDate(activeScan.timestamp);
+
+    const exportBtn = $("#export-report-btn");
+    if (exportBtn) {
+      exportBtn.classList.toggle("hidden", activeScan.status !== "completed");
+    }
+
+    // Update Report view data as well
+    renderReportCard(activeScan);
+  }
+
+  // 6. Incremental Lists
+  renderRecentScansIncremental();
+  if (store.currentView === "history") {
+    renderHistoryIncremental();
+  }
+}
+
+function renderReportCard(scan) {
+  if (!scan) return;
+  $("#report-heading").textContent = `${scan.type} security report`;
+  const dot = $("#report-status-dot");
+  if (dot) dot.style.background = getRiskColor(scan.classification);
+  $("#report-classification").textContent = scan.classification || "";
+  $("#report-status-text").textContent = getScoreCaption(scan.score ?? 0);
+  $("#report-score").textContent = `${scan.score ?? 0} / 100`;
+  $("#report-target").textContent = scan.target || "";
+  $("#report-explanation").textContent = scan.explanation || "";
+  $("#report-id").textContent = scan.id;
+  $("#report-type").textContent = scan.type;
+  $("#report-time").textContent = formatDate(scan.timestamp);
+  $("#report-classification-2").textContent = scan.classification || "";
+
+  const evidenceEl = $("#report-evidence");
+  if (evidenceEl) {
+    evidenceEl.innerHTML = (scan.findings || [])
       .map(
-        (finding) => `
+        (f) => `
           <article class="report-evidence-item">
-            <strong>${escapeHtml(finding.title)}</strong>
-            <p>${escapeHtml(finding.description)}</p>
+            <strong>${escapeHtml(f.title)}</strong>
+            <p>${escapeHtml(f.description)}</p>
           </article>
         `
       )
       .join("");
+  }
 
-  // Executive Narrative Preview
   const narrativeCard = $("#narrative-report-card");
   const narrativeBody = $("#narrative-report-body");
   if (narrativeCard && narrativeBody) {
-    if (result.report_text && result.report_text.trim()) {
+    if (scan.report_text && scan.report_text.trim()) {
       show(narrativeCard);
-      narrativeBody.textContent = result.report_text.trim();
+      narrativeBody.textContent = scan.report_text.trim();
       const genTag = $("#narrative-generated-by");
       if (genTag) {
-        genTag.textContent = result.report_generated_by === "qwen" ? "Qwen AI Narrative" : "Deterministic Template";
+        genTag.textContent =
+          scan.report_generated_by === "qwen" ? "Qwen AI Narrative" : "Deterministic Template";
       }
     } else {
       hide(narrativeCard);
@@ -1040,24 +808,274 @@ function renderReport(result) {
 }
 
 /* -----------------------------
+   INPUT COLLECTION
+   - Zero parsing / normalization: sends raw string to backend
+----------------------------- */
+function collectRawInput() {
+  if (store.currentMode === "url") {
+    return $("#url-input").value;
+  }
+  if (store.currentMode === "email") {
+    return {
+      sender: $("#email-sender").value,
+      subject: $("#email-subject").value,
+      body: $("#email-body").value
+    };
+  }
+  return $("#content-input").value;
+}
+
+function isInputNonEmpty(data) {
+  if (!data) return false;
+  if (typeof data === "string") return data.trim().length > 0;
+  if (typeof data === "object") {
+    return (
+      (data.sender && data.sender.trim().length > 0) ||
+      (data.subject && data.subject.trim().length > 0) ||
+      (data.body && data.body.trim().length > 0)
+    );
+  }
+  return false;
+}
+
+function clearCurrentInput() {
+  if (store.currentMode === "url") {
+    $("#url-input").value = "";
+  } else if (store.currentMode === "email") {
+    $("#email-sender").value = "";
+    $("#email-subject").value = "";
+    $("#email-body").value = "";
+  } else {
+    $("#content-input").value = "";
+  }
+}
+
+/* -----------------------------
+   EVENT HANDLERS
+   - Handlers DISPATCH, do not await network
+   - Return synchronously in same frame
+----------------------------- */
+$("#analyze-button").addEventListener("click", () => {
+  const rawInput = collectRawInput();
+  if (!isInputNonEmpty(rawInput)) {
+    updateStore((s) => {
+      s.error = "Please enter data to analyze.";
+    });
+    return;
+  }
+
+  // Idempotency: generate UUID client-side
+  const idempotencyKey = crypto.randomUUID();
+  const tempId = `CG-${idempotencyKey.slice(0, 8).toUpperCase()}`;
+
+  let displayTarget = "";
+  if (typeof rawInput === "string") {
+    displayTarget = rawInput.trim();
+  } else if (typeof rawInput === "object") {
+    displayTarget = `${rawInput.subject || "Email"} (from: ${rawInput.sender || "Unknown"})`;
+  }
+
+  // 1. Optimistic scan entry created immediately
+  const optimisticScan = {
+    id: tempId,
+    type: store.currentMode.toUpperCase(),
+    target: displayTarget,
+    status: "queued",
+    score: 0,
+    classification: "Queued",
+    summary: "Scan queued for multi-engine analysis...",
+    findings: [],
+    signals: [],
+    explanation: "Awaiting worker processing.",
+    report_text: "",
+    report_generated_by: "",
+    timestamp: new Date().toISOString(),
+    idempotencyKey: idempotencyKey
+  };
+
+  // 2. Store updated optimistically & rendered in first frame
+  updateStore((s) => {
+    s.error = null;
+    s.scans.unshift(optimisticScan);
+    s.scans = s.scans.slice(0, 50);
+    s.activeScanId = tempId;
+  });
+
+  // Clear inputs immediately so user can continue working
+  clearCurrentInput();
+
+  // 3. Network task dispatched to scheduler (handler does NOT await)
+  scheduler
+    .enqueue(
+      async (signal) => {
+        const payload = {
+          input_type: store.currentMode,
+          data: rawInput
+        };
+
+        const response = await fetch(`${API_BASE_URL}/api/v1/scans`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey
+          },
+          body: JSON.stringify(payload),
+          signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server returned HTTP ${response.status}`);
+        }
+        return response.json();
+      },
+      { priority: 2, timeout: 15000 }
+    )
+    .then((serverScan) => {
+      updateStore((s) => {
+        const idx = s.scans.findIndex(
+          (item) => item.id === tempId || item.idempotencyKey === idempotencyKey
+        );
+        if (idx !== -1) {
+          s.scans[idx] = { ...s.scans[idx], ...serverScan };
+        } else {
+          s.scans.unshift(serverScan);
+        }
+        if (s.activeScanId === tempId) {
+          s.activeScanId = serverScan.id;
+        }
+      });
+      scheduleNextPoll(100);
+    })
+    .catch((err) => {
+      if (err.name === "AbortError") return;
+      updateStore((s) => {
+        const idx = s.scans.findIndex((item) => item.id === tempId);
+        if (idx !== -1) {
+          s.scans[idx].status = "failed";
+          s.scans[idx].classification = "Failed";
+          s.scans[idx].summary = "Analysis request failed or timed out. Click to retry.";
+        }
+        s.error = err.message || "Network request failed.";
+      });
+    });
+});
+
+/* -----------------------------
+   NAVIGATION & UI CONTROLS
+----------------------------- */
+function switchView(viewName) {
+  updateStore((s) => {
+    s.currentView = viewName;
+  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+$$("[data-view]").forEach((button) => {
+  button.addEventListener("click", () => {
+    switchView(button.dataset.view);
+  });
+});
+
+$$(".mode-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    updateStore((s) => {
+      s.currentMode = tab.dataset.mode;
+      s.error = null;
+    });
+  });
+});
+
+$("#sample-url").addEventListener("click", () => {
+  $("#url-input").value = "https://secure-login-account.example.com/verify";
+});
+
+$("#new-analysis").addEventListener("click", () => {
+  clearCurrentInput();
+  updateStore((s) => {
+    s.currentMode = "url";
+    s.activeScanId = null;
+    s.error = null;
+  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+$("#open-report").addEventListener("click", () => {
+  const active = store.scans.find((s) => s.id === store.activeScanId);
+  if (active) {
+    renderReportCard(active);
+    hide($("#result-card"));
+    show($("#report-card"));
+    window.scrollTo({
+      top: $("#report-card").offsetTop - 90,
+      behavior: "smooth"
+    });
+  }
+});
+
+$("#close-report").addEventListener("click", () => {
+  hide($("#report-card"));
+  show($("#result-card"));
+  window.scrollTo({
+    top: $("#result-card").offsetTop - 90,
+    behavior: "smooth"
+  });
+});
+
+// Filter chips in History
+$$(".filter-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    $$(".filter-chip").forEach((c) => c.classList.remove("active"));
+    chip.classList.add("active");
+    updateStore((s) => {
+      s.currentFilter = chip.dataset.filter || "all";
+    });
+  });
+});
+
+// Delegated report opener on scan list items
+document.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-report-id]");
+  if (!btn) return;
+
+  const id = btn.dataset.reportId;
+  const scan = store.scans.find((s) => s.id === id);
+  if (!scan) return;
+
+  updateStore((s) => {
+    s.activeScanId = id;
+    s.currentView = "analyze";
+  });
+
+  const card = scan.status === "completed" ? $("#result-card") : $("#progress-card");
+  if (card) {
+    window.scrollTo({
+      top: card.offsetTop - 90,
+      behavior: "smooth"
+    });
+  }
+});
+
+/* -----------------------------
    REPORT EXPORT
 ----------------------------- */
-
 function downloadScanReport(scanId) {
-  if (!scanId && !currentResult) return;
-  if (USE_MOCK_DATA && currentResult && currentResult.report_text) {
-    const blob = new Blob([currentResult.report_text], { type: "text/plain;charset=utf-8" });
+  const scan = store.scans.find((s) => s.id === scanId);
+  if (!scan) return;
+
+  if (scan.report_text) {
+    const blob = new Blob([scan.report_text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `cyberguard-report-${scanId || "scan"}.txt`;
+    a.download = `cyberguard-report-${scanId}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     return;
   }
-  const downloadUrl = `${API_BASE_URL}/api/scans/${encodeURIComponent(scanId)}/report`;
+
+  const downloadUrl = `${API_BASE_URL}/api/v1/scans/${encodeURIComponent(scanId)}/report`;
   const a = document.createElement("a");
   a.href = downloadUrl;
   a.download = `cyberguard-report-${scanId}.txt`;
@@ -1068,364 +1086,70 @@ function downloadScanReport(scanId) {
 
 $("#export-report-btn")?.addEventListener("click", (e) => {
   e.preventDefault();
-  if (currentResult && currentResult.id) {
-    downloadScanReport(currentResult.id);
-  }
+  if (store.activeScanId) downloadScanReport(store.activeScanId);
 });
 
 $("#export-report-from-card")?.addEventListener("click", (e) => {
   e.preventDefault();
-  if (currentResult && currentResult.id) {
-    downloadScanReport(currentResult.id);
-  }
+  if (store.activeScanId) downloadScanReport(store.activeScanId);
 });
 
 /* -----------------------------
-   NEW ANALYSIS
+   LIFECYCLE & VISIBILITY HANDLERS
+   - Cancel in-flight requests when tab is hidden or closing
+   - Resume polling when tab becomes visible or online
 ----------------------------- */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    scheduler.cancelAll("Visibility hidden");
+  } else {
+    scheduleNextPoll(100);
+  }
+});
 
-$("#new-analysis").addEventListener("click", () => {
-  hide($("#result-card"));
-  hide($("#report-card"));
+window.addEventListener("beforeunload", () => {
+  scheduler.cancelAll("Page unload");
+});
 
-  $("#url-input").value = "";
-  $("#email-sender").value = "";
-  $("#email-subject").value = "";
-  $("#email-body").value = "";
-  $("#content-input").value = "";
+window.addEventListener("online", () => {
+  updateStore((s) => { s.connection = "online"; });
+  scheduleNextPoll(100);
+});
 
-  switchMode("url");
-
-  window.scrollTo({
-    top: 0,
-    behavior: "smooth"
-  });
+window.addEventListener("offline", () => {
+  updateStore((s) => { s.connection = "offline"; });
 });
 
 /* -----------------------------
-   HISTORY
+   INITIAL STARTUP & HISTORY SYNC
 ----------------------------- */
+// 1. Initial synchronous paint from state
+render();
 
-$$(".filter-button").forEach((button) => {
-  button.addEventListener("click", () => {
-    currentFilter = button.dataset.filter;
-
-    $$(".filter-button").forEach((item) => {
-      item.classList.toggle(
-        "active",
-        item.dataset.filter === currentFilter
-      );
-    });
-
-    renderHistory();
-  });
-});
-
-function renderRecentScans() {
-  const container = $("#recent-scans");
-
-  if (!state.scans.length) {
-    container.innerHTML = `
-      <div class="recent-item">
-        <div class="recent-main">
-          <strong>No scans yet</strong>
-          <span>Your latest analysis will appear here.</span>
-        </div>
-      </div>
-    `;
-
-    return;
-  }
-
-  container.innerHTML = state.scans
-    .slice(0, 5)
-    .map(renderRecentItem)
-    .join("");
-
-  bindReportButtons();
-}
-
-function renderRecentItem(scan) {
-  return `
-    <div class="recent-item">
-      <div class="recent-main">
-        <strong>${escapeHtml(getDisplayTarget(scan))}</strong>
-        <span>${escapeHtml(scan.type)} · ${escapeHtml(formatDate(scan.timestamp))}</span>
-      </div>
-
-      <span class="status-label ${getStatusClass(scan.classification)}">
-        ${escapeHtml(scan.classification)}
-      </span>
-
-      <span class="score-small">
-        ${scan.score}/100
-      </span>
-
-      <button
-        class="open-report-button"
-        type="button"
-        data-report-id="${escapeHtml(scan.id)}"
-      >
-        Open report →
-      </button>
-    </div>
-  `;
-}
-
-function renderHistory() {
-  const container = $("#history-list");
-
-  const filtered =
-    currentFilter === "all"
-      ? state.scans
-      : state.scans.filter(
-          (scan) =>
-            getFilterClass(scan.classification) === currentFilter
-        );
-
-  if (!filtered.length) {
-    container.innerHTML = `
-      <div class="history-row">
-        <div class="history-target">
-          <strong>No matching scans</strong>
-          <span>Run a new analysis to add a result here.</span>
-        </div>
-      </div>
-    `;
-
-    return;
-  }
-
-  container.innerHTML = filtered
-    .map(
-      (scan) => `
-        <div class="history-row">
-          <div class="history-target">
-            <strong>${escapeHtml(getDisplayTarget(scan))}</strong>
-            <span>${escapeHtml(scan.id)}</span>
-          </div>
-
-          <div class="history-cell-label">
-            ${escapeHtml(scan.type)}
-          </div>
-
-          <div class="score-small">
-            ${scan.score}/100
-          </div>
-
-          <div class="status-label ${getStatusClass(scan.classification)}">
-            ${escapeHtml(scan.classification)}
-          </div>
-
-          <button
-            class="history-action"
-            type="button"
-            data-report-id="${escapeHtml(scan.id)}"
-          >
-            Report →
-          </button>
-        </div>
-      `
-    )
-    .join("");
-
-  bindReportButtons();
-}
-
-function bindReportButtons() {
-  // Handled via delegated click listener
-}
-
-document.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-report-id]");
-  if (!button) {
-    return;
-  }
-
-  const id = button.dataset.reportId;
-  const scan = state.scans.find(
-    (item) => item.id === id
-  );
-
-  if (!scan) {
-    return;
-  }
-
-  currentResult = scan;
-
-  renderReport(scan);
-  showResult(scan);
-
-  switchView("analyze");
-
-  hide($("#result-card"));
-  show($("#report-card"));
-
-  window.scrollTo({
-    top: $("#report-card").offsetTop - 90,
-    behavior: "smooth"
-  });
-});
-
-function getFilterClass(classification) {
-  if (classification === "Safe") {
-    return "safe";
-  }
-
-  if (classification === "Suspicious") {
-    return "suspicious";
-  }
-
-  return "high";
-}
-
-function getStatusClass(classification) {
-  if (classification === "Safe") {
-    return "severity-low";
-  }
-
-  if (classification === "Suspicious") {
-    return "severity-medium";
-  }
-
-  return "severity-high";
-}
-
-function getDisplayTarget(scan) {
-  return scan.target
-    .replace(/^From:\s*/i, "")
-    .split("\n")[0]
-    .slice(0, 80);
-}
-
-/* -----------------------------
-   STORAGE
------------------------------ */
-
-function loadScans() {
-  try {
-    const stored = localStorage.getItem(
-      "cyberguard_scans"
-    );
-
-    if (!stored) {
-      return createInitialScans();
+// 2. Non-blocking initial history sync via scheduler
+scheduler
+  .enqueue(
+    (signal) =>
+      fetch(`${API_BASE_URL}/api/v1/scans`, { signal }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
+    { priority: 0, timeout: 8000 }
+  )
+  .then((serverScans) => {
+    if (Array.isArray(serverScans) && serverScans.length) {
+      updateStore((s) => {
+        const ids = new Set(serverScans.map((item) => item.id));
+        const localRemaining = s.scans.filter((item) => !ids.has(item.id));
+        s.scans = [...serverScans, ...localRemaining].slice(0, 50);
+        if (!s.activeScanId && s.scans.length) {
+          s.activeScanId = s.scans[0].id;
+        }
+      });
+      // Start polling if any server scan is queued or processing
+      scheduleNextPoll(500);
     }
-
-    const parsed = JSON.parse(stored);
-
-    return Array.isArray(parsed)
-      ? parsed
-      : createInitialScans();
-  } catch {
-    return createInitialScans();
-  }
-}
-
-function saveScans() {
-  localStorage.setItem(
-    "cyberguard_scans",
-    JSON.stringify(state.scans)
-  );
-}
-
-function createInitialScans() {
-  return [
-    buildResult({
-      type: "URL",
-      target: "https://example.com",
-      score: 12,
-      findings: [
-        {
-          severity: "low",
-          title: "No strong suspicious indicators",
-          description:
-            "The initial first-pass checks found no major warning signs."
-        }
-      ],
-      summary:
-        "The URL does not show strong suspicious indicators in this first-pass analysis."
-    }),
-
-    buildResult({
-      type: "Email",
-      target:
-        "From: alerts@example.org\nSubject: Account verification required",
-      score: 61,
-      findings: [
-        {
-          severity: "medium",
-          title: "Urgency language",
-          description:
-            "The message encourages the recipient to act quickly."
-        },
-        {
-          severity: "medium",
-          title: "Account verification request",
-          description:
-            "The email references account verification."
-        }
-      ],
-      summary:
-        "Several signals suggest that the email deserves additional review."
-    }),
-
-    buildResult({
-      type: "URL",
-      target:
-        "https://secure-login-account.example.com/verify",
-      score: 82,
-      findings: [
-        {
-          severity: "high",
-          title: "Suspicious URL structure",
-          description:
-            "The hostname uses a nested structure combined with account-related wording."
-        },
-        {
-          severity: "medium",
-          title: "Verification wording",
-          description:
-            "The URL contains terminology commonly associated with login and verification pages."
-        }
-      ],
-      summary:
-        "The submitted URL contains several indicators that deserve further investigation."
-    })
-  ];
-}
-
-/* -----------------------------
-   UTILITIES
------------------------------ */
-
-function generateScanId() {
-  const random = Math.floor(
-    100000 + Math.random() * 900000
-  );
-
-  return `CG-${random}`;
-}
-
-function formatDate(timestamp) {
-  return new Intl.DateTimeFormat(
-    undefined,
-    {
-      dateStyle: "medium",
-      timeStyle: "short"
-    }
-  ).format(new Date(timestamp));
-}
-
-function wait(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+  })
+  .catch(() => {
+    // If backend unavailable, UI remains functional with cached state
   });
-}
-
-/* -----------------------------
-   INITIALIZATION
------------------------------ */
-
-renderRecentScans();
-

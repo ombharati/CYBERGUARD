@@ -240,6 +240,19 @@ button:disabled {
   height: 8px;
   border-radius: 50%;
   background: var(--safe);
+  transition: background-color 0.2s ease;
+}
+
+.state-dot.online {
+  background: var(--safe);
+}
+
+.state-dot.reconnecting {
+  background: var(--warning);
+}
+
+.state-dot.offline {
+  background: var(--high);
 }
 
 /* --------------------------------------------------------------------------
