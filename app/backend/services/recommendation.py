@@ -36,7 +36,11 @@ def load_response_rules(rules_path: Optional[Path] = None) -> Dict[str, List[str
 def normalize_threat_category(input_type: str, classification: str) -> str:
     """Normalize input_type and classification to standard threat category prefix."""
     inp = (input_type or "").strip().lower()
-    cls_clean = (classification or "").strip().lower().replace(" ", "_")
+    
+    if isinstance(classification, list):
+        classification = classification[0] if classification else ""
+    cls_clean = str(classification or "").strip().lower().replace(" ", "_")
+    
 
     if inp in ("url",) and cls_clean in ("high_risk", "critical", "suspicious", "high", "medium"):
         return "phishing_url"
@@ -67,7 +71,9 @@ def get_recommended_actions(
     """
     rules = load_response_rules(rules_path)
     threat_category = normalize_threat_category(input_type or "", classification)
-    tier_key = (classification or "safe").strip().lower().replace(" ", "_")
+    if isinstance(classification, list):
+        classification = classification[0] if classification else "safe"
+    tier_key = str(classification or "safe").strip().lower().replace(" ", "_")
     signal_key = (top_signal_type or "").strip().lower().replace(" ", "_")
 
     candidate_keys = []

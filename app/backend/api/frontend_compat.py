@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.backend.core.database import get_db
 from app.backend.schemas.scan import ScanCreateRequest, ScanResponse
 from app.backend.services.scan_service import ScanService
+import app.backend.api.v1.scans as v1_scans
 
 router = APIRouter(prefix="/scans", tags=["Frontend Compatibility"])
 _scan_service = ScanService()
@@ -28,21 +29,34 @@ async def create_scan_compat(
     Executes scan synchronously so frontend script.js receives the completed
     report directly and renders showResult() without client-side polling changes.
     """
-    try:
-        scan = await _scan_service.create_scan(
-            db=db,
-            input_type=request.input_type,
-            data=request.data,
-            run_sync=True,
+    if v1_scans.scan_queue_count >= v1_scans.MAX_QUEUE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Scan queue is full. Please try again later.",
+            headers={"Retry-After": "30"}
         )
-        return scan.to_dict()
+
+    v1_scans.scan_queue_count += 1
+    try:
+        async with v1_scans.scan_semaphore:
+            scan = await _scan_service.create_scan(
+                db=db,
+                input_type=request.input_type,
+                data=request.data,
+                run_sync=True,
+            )
+            return scan.to_dict()
     except ValueError as val_err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
     except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {str(exc)}",
         )
+    finally:
+        v1_scans.scan_queue_count -= 1
 
 
 @router.get(

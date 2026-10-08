@@ -2,6 +2,7 @@
 
 Routes handle HTTP concerns only.
 """
+import asyncio
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, status, Response
 from sqlalchemy.orm import Session
@@ -11,6 +12,11 @@ from app.backend.services.scan_service import ScanService
 
 router = APIRouter(prefix="/scans", tags=["Scans v1"])
 _scan_service = ScanService()
+
+MAX_CONCURRENT_SCANS = 1
+MAX_QUEUE_SIZE = 10
+scan_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
+scan_queue_count = 0
 
 
 @router.post(
@@ -25,22 +31,37 @@ async def create_scan(
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ):
-    try:
-        scan = await _scan_service.create_scan(
-            db=db,
-            input_type=request.input_type,
-            data=request.data,
-            run_sync=sync,
-            idempotency_key=idempotency_key,
+    global scan_queue_count
+
+    if scan_queue_count >= MAX_QUEUE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Scan queue is full. Please try again later.",
+            headers={"Retry-After": "30"}
         )
-        return scan.to_dict()
+
+    scan_queue_count += 1
+    try:
+        async with scan_semaphore:
+            scan = await _scan_service.create_scan(
+                db=db,
+                input_type=request.input_type,
+                data=request.data,
+                run_sync=sync,
+                idempotency_key=idempotency_key,
+            )
+            return scan.to_dict()
     except ValueError as val_err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
     except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to initiate scan: {str(exc)}",
         )
+    finally:
+        scan_queue_count -= 1
 
 
 @router.get(

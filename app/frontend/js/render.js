@@ -730,14 +730,14 @@ function render() {
         summaryRow.className = "evidence-summary-row";
         summaryRow.style.padding = "12px 16px";
         summaryRow.style.marginTop = "8px";
-        summaryRow.style.background = "rgba(15, 23, 42, 0.6)";
-        summaryRow.style.border = "1px solid rgba(51, 65, 85, 0.5)";
+        summaryRow.style.background = "rgba(15, 23, 42, 0.04)";
+        summaryRow.style.border = "1px solid var(--border)";
         summaryRow.style.borderRadius = "6px";
-        summaryRow.style.color = "#94a3b8";
+        summaryRow.style.color = "var(--text-soft)";
         summaryRow.style.fontSize = "0.85rem";
         
         if (rawSum !== finalScore) {
-          summaryRow.innerHTML = `Sum of contributions: <strong>${rawSum}</strong>. Applied thresholds/caps adjusted score to: <strong style="color: #f8fafc">${finalScore}</strong>. Final: <strong>${finalScore}</strong>.`;
+          summaryRow.innerHTML = `Sum of contributions: <strong>${rawSum}</strong>. Applied thresholds/caps adjusted score to: <strong style="color: var(--text)">${finalScore}</strong>. Final: <strong>${finalScore}</strong>.`;
         } else {
           summaryRow.innerHTML = `Sum of contributions: <strong>${rawSum}</strong>. Final: <strong>${finalScore}</strong>.`;
         }
