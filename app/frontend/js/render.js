@@ -8,14 +8,18 @@
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+window.$ = $;
+window.$$ = $$;
 
 function show(element) {
   if (element) element.classList.remove("hidden");
 }
+window.show = show;
 
 function hide(element) {
   if (element) element.classList.add("hidden");
 }
+window.hide = hide;
 
 function escapeHtml(value) {
   return String(value ?? "")

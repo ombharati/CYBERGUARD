@@ -174,6 +174,17 @@ function setError(err) {
 }
 
 // Global exposure for cross-script access
+window.state = state;
+window.setScan = setScan;
+window.removeScan = removeScan;
+window.setConnection = setConnection;
+window.setHealth = setHealth;
+window.setActiveScan = setActiveScan;
+window.setCurrentMode = setCurrentMode;
+window.setCurrentView = setCurrentView;
+window.setCurrentFilter = setCurrentFilter;
+window.setError = setError;
+
 window.store = {
   state,
   setScan,
