@@ -554,7 +554,7 @@ function render() {
   const errorBox = $("#error-box");
   if (errorBox) {
     if (currentStore.error) {
-      errorBox.textContent = currentStore.error;
+      errorBox.innerHTML = currentStore.error;
       show(errorBox);
     } else {
       hide(errorBox);

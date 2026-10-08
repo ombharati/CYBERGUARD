@@ -10,32 +10,55 @@
 /* -----------------------------
    API CONFIGURATION
 ----------------------------- */
-function getApiBaseUrl() {
-  const custom = localStorage.getItem("cyberguard_api_url");
-  if (custom) return custom.replace(/\/+$/, "");
+function getApiConfig() {
+  let url = localStorage.getItem("cyberguard_api_url");
+  let key = localStorage.getItem("cyberguard_api_key") || "";
 
   const urlParams = new URLSearchParams(window.location.search);
+  let changed = false;
+
   const paramApi = urlParams.get("api");
   if (paramApi) {
-    const clean = paramApi.replace(/\/+$/, "");
-    localStorage.setItem("cyberguard_api_url", clean);
-    return clean;
+    url = paramApi.replace(/\/+$/, "");
+    localStorage.setItem("cyberguard_api_url", url);
+    changed = true;
   }
 
-  const host = window.location.hostname;
-  if (!host || window.location.protocol === "file:" || host === "localhost" || host === "127.0.0.1") {
-    return "http://localhost:8000";
+  const paramKey = urlParams.get("key");
+  if (paramKey !== null) {
+    key = paramKey;
+    localStorage.setItem("cyberguard_api_key", key);
+    changed = true;
   }
 
-  // If served from a remote origin, do NOT fallback to localhost. Try same origin, or return null.
-  if (window.location.origin && window.location.origin !== "null" && !host.endsWith("github.io")) {
-    return window.location.origin;
+  if (changed) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("api");
+    cleanUrl.searchParams.delete("key");
+    window.history.replaceState({}, document.title, cleanUrl.toString());
   }
 
-  return null;
+  if (!url) {
+    const host = window.location.hostname;
+    if (!host || window.location.protocol === "file:" || host === "localhost" || host === "127.0.0.1") {
+      url = "http://localhost:8000";
+    } else if (window.location.origin && window.location.origin !== "null" && !host.endsWith("github.io")) {
+      url = window.location.origin;
+    }
+  }
+
+  return { url, key };
 }
 
-const API_BASE_URL = getApiBaseUrl();
+const config = getApiConfig();
+const API_BASE_URL = config.url;
+let API_KEY = config.key;
+
+function getAuthHeaders(extra = {}) {
+  const h = { ...extra };
+  if (API_KEY) h["X-API-Key"] = API_KEY;
+  return h;
+}
 
 /* -----------------------------
    CONNECTION STATE MACHINE
@@ -95,6 +118,9 @@ function formatNetworkError(err, context = "CYBERGUARD backend") {
   }
   if (err.name === "AbortError") {
     return `Connection to ${context} timed out.`;
+  }
+  if (err.message && err.message.includes("HTTP 401")) {
+    return `API key rejected. <a href="javascript:void(0)" onclick="document.getElementById('nav-settings-btn').click()" style="color:var(--primary-color);text-decoration:underline;">Open settings</a> to update it.`;
   }
   if (err.message && (err.message.startsWith("HTTP ") || err.message.startsWith("Server returned HTTP "))) {
     return `Server error: ${err.message}`;
@@ -166,7 +192,7 @@ async function runPollIteration() {
       try {
         const updated = await scheduler.enqueue(
           (signal) =>
-            fetch(`${API_BASE_URL}/api/v1/scans/${encodeURIComponent(scan.id)}`, { signal }).then(
+            fetch(`${API_BASE_URL}/api/v1/scans/${encodeURIComponent(scan.id)}`, { headers: getAuthHeaders(), signal }).then(
               (r) => {
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 return r.json();
@@ -188,7 +214,10 @@ async function runPollIteration() {
         if (err.name !== "AbortError") {
           consecutivePollFailures++;
           handleRequestFailure(err);
-          if (consecutivePollFailures >= 2) {
+          if (err.message && err.message.includes("HTTP 401")) {
+            // Do not retry on 401
+            pollIntervalMs = 60000;
+          } else if (consecutivePollFailures >= 2) {
             pollIntervalMs = Math.min(pollIntervalMs * 1.5, 10000);
           }
         }
@@ -343,10 +372,10 @@ $("#analyze-button").addEventListener("click", () => {
 
         const response = await fetch(`${API_BASE_URL}/api/v1/scans`, {
           method: "POST",
-          headers: {
+          headers: getAuthHeaders({
             "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey
-          },
+          }),
           body: JSON.stringify(payload),
           signal
         });
@@ -524,7 +553,7 @@ $("#clear-history-btn")?.addEventListener("click", () => {
     window.store.clearHistory();
   }
   // Clear server history as well
-  fetch(`${API_BASE_URL}/api/v1/scans`, { method: "DELETE" }).catch(() => {});
+  fetch(`${API_BASE_URL}/api/v1/scans`, { method: "DELETE", headers: getAuthHeaders() }).catch(() => {});
 });
 
 // Delegated report opener on scan list items
@@ -569,12 +598,24 @@ function downloadScanReport(scanId) {
   }
 
   const downloadUrl = `${API_BASE_URL}/api/v1/scans/${encodeURIComponent(scanId)}/report`;
-  const a = document.createElement("a");
-  a.href = downloadUrl;
-  a.download = `cyberguard-report-${scanId}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  fetch(downloadUrl, { headers: getAuthHeaders() })
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.blob();
+    })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cyberguard-report-${scanId}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    })
+    .catch(err => {
+      alert("Failed to download report: " + err.message);
+    });
 }
 
 $("#export-report-btn")?.addEventListener("click", (e) => {
@@ -630,7 +671,7 @@ async function checkHealth(timeoutMs = 2000) {
   }, timeoutMs);
 
   try {
-    const res = await fetch(`${API_BASE_URL}/health`, { signal: controller.signal });
+    const res = await fetch(`${API_BASE_URL}/health`, { headers: getAuthHeaders(), signal: controller.signal });
     clearTimeout(timeoutId);
     if (!res.ok) {
       throw new Error(`Server returned HTTP ${res.status}`);
@@ -676,7 +717,7 @@ checkHealth(2000).catch((err) => {
 scheduler
   .enqueue(
     (signal) =>
-      fetch(`${API_BASE_URL}/api/v1/scans`, { signal }).then((r) => {
+      fetch(`${API_BASE_URL}/api/v1/scans`, { headers: getAuthHeaders(), signal }).then((r) => {
         if (!r.ok) throw new Error(`Server returned HTTP ${r.status}`);
         return r.json();
       }),
@@ -701,3 +742,87 @@ scheduler
       setError(formatNetworkError(err, "CYBERGUARD backend"));
     }
   });
+
+/* -----------------------------
+   SETTINGS UI LOGIC
+----------------------------- */
+const settingsModal = document.getElementById("settings-modal");
+const settingsBtn = document.getElementById("nav-settings-btn");
+const closeBtn = document.getElementById("settings-close-btn");
+const saveBtn = document.getElementById("settings-save-btn");
+const testBtn = document.getElementById("settings-test-btn");
+const urlInput = document.getElementById("settings-api-url");
+const keyInput = document.getElementById("settings-api-key");
+const testResult = document.getElementById("settings-test-result");
+
+if (settingsBtn) {
+  settingsBtn.addEventListener("click", () => {
+    urlInput.value = API_BASE_URL || "";
+    keyInput.value = API_KEY || "";
+    testResult.textContent = "";
+    settingsModal.showModal();
+  });
+}
+
+if (closeBtn) {
+  closeBtn.addEventListener("click", () => {
+    settingsModal.close();
+  });
+}
+
+if (saveBtn) {
+  saveBtn.addEventListener("click", () => {
+    const newUrl = urlInput.value.trim().replace(/\/+$/, "");
+    const newKey = keyInput.value.trim();
+    
+    if (newUrl) {
+      localStorage.setItem("cyberguard_api_url", newUrl);
+    } else {
+      localStorage.removeItem("cyberguard_api_url");
+    }
+    
+    localStorage.setItem("cyberguard_api_key", newKey);
+    
+    // Quick reload to apply new settings cleanly across the app
+    window.location.reload();
+  });
+}
+
+if (testBtn) {
+  testBtn.addEventListener("click", async () => {
+    const testUrl = urlInput.value.trim().replace(/\/+$/, "");
+    const testKey = keyInput.value.trim();
+    
+    if (!testUrl) {
+      testResult.style.color = "var(--error-color)";
+      testResult.textContent = "Please enter an API URL to test.";
+      return;
+    }
+    
+    testResult.style.color = "var(--text-secondary)";
+    testResult.textContent = "Testing connection...";
+    testBtn.disabled = true;
+    
+    try {
+      // Test health first
+      const healthRes = await fetch(`${testUrl}/health`);
+      if (!healthRes.ok) throw new Error(`Health check failed: HTTP ${healthRes.status}`);
+      
+      // Test auth (requires hitting an authenticated endpoint like GET /scans)
+      const headers = testKey ? { "X-API-Key": testKey } : {};
+      const authRes = await fetch(`${testUrl}/api/v1/scans`, { headers });
+      
+      if (authRes.status === 401) {
+        throw new Error("Authentication failed: HTTP 401. Key is invalid or missing.");
+      }
+      
+      testResult.style.color = "var(--success-color)";
+      testResult.textContent = "Connection successful! Auth verified.";
+    } catch (err) {
+      testResult.style.color = "var(--error-color)";
+      testResult.textContent = err.message;
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+}

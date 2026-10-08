@@ -14,6 +14,7 @@ from app.backend.services.ai.laya_adapter import LayaAdapter
 from app.backend.services.ai.qwen_adapter import QwenAdapter
 from app.backend.api.v1.scans import router as v1_scans_router
 from app.backend.api.frontend_compat import router as compat_scans_router
+from app.backend.middleware.api_key import APIKeyMiddleware
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -58,13 +59,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# API Key Middleware
+app.add_middleware(APIKeyMiddleware)
+
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=False if "*" in settings.cors_origins else True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-API-Key"],
 )
 
 

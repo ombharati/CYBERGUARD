@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     MAX_URL_LENGTH: int = 2048
     MAX_EMAIL_BODY_LENGTH: int = 20000
     MAX_CONTENT_LENGTH: int = 20000
+    API_KEY: str = ""
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.API_KEY)
 
     @property
     def cors_origins(self) -> List[str]:

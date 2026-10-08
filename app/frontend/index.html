@@ -24,6 +24,7 @@
         <button class="nav-link" data-view="dashboard" type="button">Dashboard</button>
         <button class="nav-link" data-view="history" type="button">History</button>
         <button class="nav-link" data-view="about" type="button">About</button>
+        <button class="nav-link" id="nav-settings-btn" type="button">Settings</button>
       </nav>
 
       <div class="system-state" id="connection-pill">
@@ -601,6 +602,28 @@
       </div>
     </section>
   </main>
+
+  <!-- SETTINGS MODAL -->
+  <dialog id="settings-modal" class="modal">
+    <div class="modal-content" style="padding: 24px; max-width: 400px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border-color); color: var(--text-primary);">
+      <h2 style="margin-top: 0; margin-bottom: 16px;">Connection Settings</h2>
+      <div style="margin-bottom: 12px;">
+        <label for="settings-api-url" style="display: block; margin-bottom: 4px; font-weight: 500;">API URL</label>
+        <input type="url" id="settings-api-url" placeholder="http://localhost:8000" style="width: 100%; padding: 8px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; border-radius: 4px;" />
+      </div>
+      <div style="margin-bottom: 16px;">
+        <label for="settings-api-key" style="display: block; margin-bottom: 4px; font-weight: 500;">API Key</label>
+        <input type="password" id="settings-api-key" placeholder="Optional shared secret" style="width: 100%; padding: 8px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; border-radius: 4px;" />
+      </div>
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <button id="settings-test-btn" type="button" class="secondary-button">Test connection</button>
+        <div style="flex-grow: 1;"></div>
+        <button id="settings-close-btn" type="button" class="secondary-button">Cancel</button>
+        <button id="settings-save-btn" type="button" class="primary-button">Save</button>
+      </div>
+      <div id="settings-test-result" style="font-size: 0.9em; white-space: pre-line; line-height: 1.4;"></div>
+    </div>
+  </dialog>
 
   <footer class="footer">
     <div class="footer-inner">
