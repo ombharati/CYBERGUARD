@@ -2,7 +2,7 @@
 
 **Local-First AI Cybersecurity Threat, Phishing & Impersonation Detection**
 
-`Cybersecurity` · `AI/ML` · `FastAPI` · `Laya` · `Qwen 3` · `PostgreSQL` · `Redis`
+`Cybersecurity` · `AI/ML` · `FastAPI` · `Laya` · `Qwen 3` · `PostgreSQL` 
 
 CYBERGUARD is a local-first cybersecurity platform combining **context-aware heuristics** with local neural models (**Laya** and **Qwen 3**) to deliver explainable, high-speed security assessments for URLs, emails, and suspicious content—including exportable plain-English narrative reports—with zero mandatory cloud dependencies.
 
