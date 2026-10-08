@@ -618,15 +618,11 @@ function render() {
       $("#score-caption").textContent = "No result - scan failed";
     } else {
       $("#result-title").textContent =
-        classification === "Critical"
-          ? "Critical security threat detected."
-          : classification === "High"
-            ? "High-risk activity detected."
-            : classification === "Medium" || classification === "Suspicious"
-              ? "Suspicious anomalies detected."
-              : classification === "Low"
-                ? "Low risk: minor indicators noted."
-                : "No major warning signs found.";
+        classification === "Critical" ? "Critical threat — immediate response recommended."
+        : classification === "High" ? "High-risk activity — likely threat."
+        : classification === "Medium" || classification === "Suspicious" ? "Suspicious indicators — worth reviewing."
+        : classification === "Low" ? "Minor indicators — likely benign."
+        : "No significant indicators detected.";
 
       $("#result-summary").textContent = activeScan.summary || "";
       $("#result-score").textContent = activeScan.score ?? 0;

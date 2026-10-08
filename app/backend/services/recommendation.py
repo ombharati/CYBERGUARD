@@ -99,10 +99,39 @@ def get_recommended_actions(
             "No immediate containment action required"
         ]
 
-    # Deduplicate while preserving order
-    deduped = []
+    # Tier-specific constraints
+    tier_limits = {
+        "critical": 8,
+        "high_risk": 5,
+        "high": 5,
+        "suspicious": 3,
+        "medium": 3,
+        "low": 1,
+        "safe": 1
+    }
+    
+    # Actions that imply High/Critical severity
+    high_severity_keywords = ["block", "revoke", "force", "reset", "isolate", "quarantine", "lock", "terminate"]
+    
+    max_actions = tier_limits.get(tier_key, 2)
+    
+    # Filter actions based on tier
+    filtered_actions = []
     for item in resolved_actions:
-        if item not in deduped:
-            deduped.append(item)
+        item_lower = item.lower()
+        is_high_sev_action = any(kw in item_lower for kw in high_severity_keywords)
+        
+        if tier_key in ("suspicious", "medium", "low", "safe") and is_high_sev_action:
+            continue
+            
+        if item not in filtered_actions:
+            filtered_actions.append(item)
+            
+    # If we filtered everything out, use tier defaults
+    if not filtered_actions:
+        filtered_actions = rules.get(f"{tier_key}+default", [
+            "Log security event for baseline monitoring",
+            "No immediate containment action required"
+        ])
 
-    return deduped
+    return filtered_actions[:max_actions]
