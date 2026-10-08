@@ -41,9 +41,9 @@ function loadStoredScans() {
 }
 
 state.scans = loadStoredScans();
-if (state.scans.size > 0) {
-  state.activeScanId = Array.from(state.scans.keys())[0];
-}
+// Do NOT auto-select a scan on startup — result panels must stay hidden
+// until the user explicitly submits a new analysis.
+// state.activeScanId remains null.
 
 function clearHistory() {
   state.scans = new Map();

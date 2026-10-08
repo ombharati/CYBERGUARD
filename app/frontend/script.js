@@ -681,9 +681,8 @@ scheduler
       for (const item of serverScans) {
         setScan(item);
       }
-      if (!state.activeScanId && serverScans.length) {
-        setActiveScan(serverScans[0].id);
-      }
+      // Do NOT auto-select a scan — result panels stay hidden
+      // until the user explicitly submits a new analysis.
       // Start polling if any server scan is queued or processing
       scheduleNextPoll(500);
     }
