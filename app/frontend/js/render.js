@@ -93,6 +93,23 @@ function getSeverityClass(severity) {
 const recentRowMap = new Map();
 const historyRowMap = new Map();
 
+function updateRowIdInPlace(oldId, newScan) {
+  if (recentRowMap.has(oldId)) {
+    const el = recentRowMap.get(oldId);
+    recentRowMap.delete(oldId);
+    recentRowMap.set(newScan.id, el);
+    updateRecentRowElement(el, newScan);
+  }
+  if (historyRowMap.has(oldId)) {
+    const el = historyRowMap.get(oldId);
+    historyRowMap.delete(oldId);
+    historyRowMap.set(newScan.id, el);
+    updateHistoryRowElement(el, newScan);
+  }
+}
+window.updateRowIdInPlace = updateRowIdInPlace;
+
+
 function updateRecentRowElement(row, scan) {
   row.dataset.scanId = scan.id;
 

@@ -121,3 +121,19 @@ class ScanFinding(Base):
             "description": self.description,
             "category": self.category,
         }
+
+
+class IdempotencyKey(Base):
+    """Stores idempotency keys to ensure duplicate POST requests return existing scan."""
+    __tablename__ = "idempotency_keys"
+
+    key = Column(String(64), primary_key=True, unique=True, index=True)
+    scan_id = Column(String(36), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    scan = relationship("Scan", backref="idempotency_records")
+

@@ -171,7 +171,16 @@ function clearCurrentInput() {
    - Calls setScan() (triggers render immediately)
    - Button is NEVER disabled: user can submit a second scan while first is running
 ----------------------------- */
+let lastSubmissionTime = 0;
+
 $("#analyze-button").addEventListener("click", () => {
+  const now = Date.now();
+  // Rapid double-click protection (< 400ms): suppress accidental double submit
+  if (now - lastSubmissionTime < 400) {
+    console.warn("[analyze] Suppressed rapid double-click within 400ms (idempotent submission)");
+    return;
+  }
+
   let rawInput;
   try {
     rawInput = getCurrentInputData();
@@ -180,6 +189,7 @@ $("#analyze-button").addEventListener("click", () => {
     return;
   }
 
+  lastSubmissionTime = now;
   const idempotencyKey = crypto.randomUUID();
   const tempId = "CG-" + Date.now().toString(36).toUpperCase();
 
@@ -243,12 +253,8 @@ $("#analyze-button").addEventListener("click", () => {
       { priority: 2, timeout: 15000 }
     )
     .then((serverScan) => {
-      // In-place update of scan row
-      // Remove temp row if ID changed and insert server scan
-      if (serverScan.id !== tempId) {
-        removeScan(tempId);
-      }
-      setScan(serverScan);
+      // In-place update of scan row: queued row is updated in place with real scan details
+      setScan(serverScan, tempId);
       if (state.activeScanId === tempId) {
         setActiveScan(serverScan.id);
       }

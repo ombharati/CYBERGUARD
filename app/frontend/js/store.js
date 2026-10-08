@@ -88,21 +88,42 @@ function persistScans() {
    MUTATION FUNCTIONS
    - Every mutation triggers render()
 ----------------------------- */
-function setScan(scan) {
+function setScan(scan, replaceId) {
   if (!scan || !scan.id) return;
-  const existing = state.scans.get(scan.id);
-  const merged = existing ? { ...existing, ...scan } : { ...scan };
 
-  if (existing) {
-    state.scans.set(scan.id, merged);
-  } else {
-    // Prepend new scan at top of Map
+  if (replaceId && replaceId !== scan.id && state.scans.has(replaceId)) {
+    // In-place replacement of optimistic temporary scan in state.scans
     const nextMap = new Map();
-    nextMap.set(scan.id, merged);
     for (const [k, v] of state.scans.entries()) {
-      if (k !== scan.id) nextMap.set(k, v);
+      if (k === replaceId) {
+        nextMap.set(scan.id, { ...v, ...scan });
+      } else {
+        nextMap.set(k, v);
+      }
     }
     state.scans = nextMap;
+    if (state.activeScanId === replaceId) {
+      state.activeScanId = scan.id;
+    }
+    // Update render layer row maps in place BEFORE render()
+    if (typeof updateRowIdInPlace === "function") {
+      updateRowIdInPlace(replaceId, scan);
+    }
+  } else {
+    const existing = state.scans.get(scan.id);
+    const merged = existing ? { ...existing, ...scan } : { ...scan };
+
+    if (existing) {
+      state.scans.set(scan.id, merged);
+    } else {
+      // Prepend new scan at top of Map
+      const nextMap = new Map();
+      nextMap.set(scan.id, merged);
+      for (const [k, v] of state.scans.entries()) {
+        if (k !== scan.id) nextMap.set(k, v);
+      }
+      state.scans = nextMap;
+    }
   }
 
   persistScans();

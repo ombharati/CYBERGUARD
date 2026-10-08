@@ -176,3 +176,35 @@ def test_scan_report_download_and_preview():
     assert "text/plain" in compat_report_res.headers["content-type"]
     assert f'filename="cyberguard-report-{scan_id}.txt"' in compat_report_res.headers["content-disposition"]
 
+
+@patch("app.backend.services.scan_service.enqueue_scan_id", return_value=True)
+def test_idempotency_keys_deduplication(mock_enqueue):
+    key = "test-idem-key-9999"
+    payload = {"input_type": "url", "data": "https://example.com/idempotent"}
+
+    # First request
+    res1 = client.post("/api/v1/scans", json=payload, headers={"Idempotency-Key": key})
+    assert res1.status_code == 201
+    scan1 = res1.json()
+
+    # Second request with the same Idempotency-Key
+    res2 = client.post("/api/v1/scans", json=payload, headers={"Idempotency-Key": key})
+    assert res2.status_code == 201
+    scan2 = res2.json()
+
+    # Must return the exact same scan ID
+    assert scan1["id"] == scan2["id"]
+
+    # Verify idempotency_keys table contains the record
+    db = TestingSessionLocal()
+    from app.backend.models.scan import IdempotencyKey
+    record = db.query(IdempotencyKey).filter(IdempotencyKey.key == key).first()
+    assert record is not None
+    assert record.scan_id == scan1["id"]
+
+    # Verify only one scan exists with this target
+    scans_count = db.query(Scan).filter(Scan.target == "https://example.com/idempotent").count()
+    assert scans_count == 1
+    db.close()
+
+

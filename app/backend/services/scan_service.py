@@ -2,7 +2,8 @@
 import logging
 from typing import List, Optional, Union, Dict, Any
 from sqlalchemy.orm import Session
-from app.backend.models.scan import Scan, generate_scan_id
+from sqlalchemy.exc import IntegrityError
+from app.backend.models.scan import Scan, IdempotencyKey, generate_scan_id
 from app.backend.services.orchestrator import ScanOrchestrator
 from app.backend.services.queue import enqueue_scan_id, is_redis_available
 
@@ -38,13 +39,15 @@ class ScanService:
         idempotency_key: Optional[str] = None,
     ) -> Scan:
         """Create a new scan record in PostgreSQL and either execute or enqueue it.
-        If idempotency_key is provided and a scan with that key exists, return it instead.
+        If idempotency_key is provided and exists in idempotency_keys table, return the existing scan.
         """
         if idempotency_key:
-            existing = db.query(Scan).filter(Scan.idempotency_key == idempotency_key).first()
-            if existing:
-                logger.info("Deduplicated scan creation: returning existing %s for key %s", existing.id, idempotency_key)
-                return existing
+            existing_record = db.query(IdempotencyKey).filter(IdempotencyKey.key == idempotency_key).first()
+            if existing_record:
+                existing_scan = db.query(Scan).filter(Scan.id == existing_record.scan_id).first()
+                if existing_scan:
+                    logger.info("Deduplicated scan creation: returning existing %s for key %s", existing_scan.id, idempotency_key)
+                    return existing_scan
 
         target_summary = self._extract_target_summary(input_type, data)
 
@@ -62,8 +65,25 @@ class ScanService:
             signals=[],
         )
         db.add(scan)
-        db.commit()
-        db.refresh(scan)
+
+        if idempotency_key:
+            idempotency_record = IdempotencyKey(key=idempotency_key, scan_id=scan.id)
+            db.add(idempotency_record)
+
+        try:
+            db.commit()
+            db.refresh(scan)
+        except IntegrityError:
+            db.rollback()
+            if idempotency_key:
+                existing_record = db.query(IdempotencyKey).filter(IdempotencyKey.key == idempotency_key).first()
+                if existing_record:
+                    existing_scan = db.query(Scan).filter(Scan.id == existing_record.scan_id).first()
+                    if existing_scan:
+                        logger.info("Concurrency deduplicated: returning existing %s for key %s", existing_scan.id, idempotency_key)
+                        return existing_scan
+            raise
+
 
         if run_sync:
             # Immediate synchronous execution (used by frontend /sync endpoints)
