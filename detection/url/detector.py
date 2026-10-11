@@ -142,6 +142,7 @@ def analyze_url(raw_url: str) -> URLAnalysisResult:
     netloc = parsed.netloc.lower()
     path = parsed.path
     query = parsed.query
+    fragment = parsed.fragment
 
     if not netloc:
         return URLAnalysisResult(
@@ -168,8 +169,8 @@ def analyze_url(raw_url: str) -> URLAnalysisResult:
     port = parsed.port
 
     # 0. Brand Identity and Official Domain Verification
-    brand_eval = evaluate_brand_identity(hostname, path)
-    path_lower = path.lower()
+    brand_eval = evaluate_brand_identity(hostname, path + "?" + query + "#" + fragment)
+    path_lower = (path + fragment).lower()
     has_sensitive_path = any(
         sp in path_lower for sp in ("/login", "/signin", "/verify", "/kyc", "/wallet", "/confirm", "/account", "/reset-password", "/auth")
     )
@@ -366,24 +367,49 @@ def analyze_url(raw_url: str) -> URLAnalysisResult:
     tld = hostname.split(".")[-1] if "." in hostname else ""
     if tld in HIGH_RISK_TLDS:
         signals["suspicious_tld"] = True
-        # Only treat as a warning finding when combined with brand lookalike, sensitive path, or raw IP
+        # Treat as a medium finding when combined with brand lookalike, sensitive path, or raw IP
         if brand_eval["is_lookalike"] or has_sensitive_path or signals["is_ip_address"]:
             findings.append(Finding(
-                severity="medium" if brand_eval["is_lookalike"] else "low",
+                severity="medium" if brand_eval["is_lookalike"] else "medium",
                 title=f"High-Abuse TLD Combined with Sensitive Context (.{tld})",
                 description=f"The top-level domain '.{tld}' is overrepresented in phishing and paired with a brand lookalike or sensitive path.",
                 category="deterministic_url",
                 signal_type="suspicious_tld",
-                weight=15,
+                weight=25,
+                evidence=f".{tld}",
+                source="deterministic",
+            ))
+        else:
+            findings.append(Finding(
+                severity="low",
+                title=f"High-Abuse Top Level Domain (.{tld})",
+                description=f"The top-level domain '.{tld}' is frequently used by malicious actors.",
+                category="deterministic_url",
+                signal_type="suspicious_tld",
+                weight=10,
                 evidence=f".{tld}",
                 source="deterministic",
             ))
 
     # 10. Keyword & Brand Analysis in Hostname and Path
     # On verified official domains, sensitive keywords (/login, /account) are routine and expected.
-    full_target_lower = (hostname + path + query).lower()
+    full_target_lower = (hostname + path + query + fragment).lower()
     matched = [kw for kw in SUSPICIOUS_KEYWORDS if kw in full_target_lower]
     signals["matched_keywords"] = matched
+    
+    # Check for embedded email address
+    if "email=" in full_target_lower or re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', full_target_lower):
+        findings.append(Finding(
+            severity="medium",
+            title="Embedded Email Address in URL",
+            description="The URL contains an email address in the parameters, which is a common tactic in targeted phishing campaigns.",
+            category="deterministic_url",
+            signal_type="embedded_email",
+            weight=20,
+            evidence="Email address found",
+            source="deterministic",
+        ))
+
     if not brand_eval["is_official"]:
         if len(matched) >= 2:
             findings.append(Finding(
@@ -405,6 +431,18 @@ def analyze_url(raw_url: str) -> URLAnalysisResult:
                 signal_type="subdomain_keyword",
                 weight=10,
                 evidence=matched[0],
+                source="deterministic",
+            ))
+            
+        if has_sensitive_path and not brand_eval["is_lookalike"]:
+            findings.append(Finding(
+                severity="medium",
+                title="Sensitive Path on Unverified Domain",
+                description="The URL contains authentication or verification paths on a domain not recognized as an official brand.",
+                category="deterministic_url",
+                signal_type="sensitive_path_unverified",
+                weight=25,
+                evidence=path,
                 source="deterministic",
             ))
 

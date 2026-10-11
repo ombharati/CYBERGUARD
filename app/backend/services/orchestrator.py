@@ -230,7 +230,9 @@ class ScanOrchestrator:
         else:
             providers_not_used.append("Laya Neural Decision Engine (unavailable)")
 
-        if qwen_res.get("available"):
+        if qwen_res.get("provider_status") == "qwen_invalid":
+            providers_not_used.append("Qwen Semantic Threat Reasoner (invalid/hallucinated)")
+        elif qwen_res.get("available"):
             providers_used.append("Qwen Semantic Threat Reasoner (GPU Ollama)")
         else:
             providers_not_used.append("Qwen Semantic Threat Reasoner (unavailable)")

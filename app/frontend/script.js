@@ -677,7 +677,6 @@ async function checkHealth(timeoutMs = 2000) {
       throw new Error(`Server returned HTTP ${res.status}`);
     }
     const data = await res.json();
-    console.info("[health_check] Backend reported healthy:", data);
     setHealth(data.status === "ok" ? "healthy" : "degraded");
     handleRequestSuccess();
     if (state.error && state.error.includes("Cannot reach server")) {

@@ -30,19 +30,28 @@ logger = logging.getLogger(__name__)
 _gpu_lock = asyncio.Lock()
 
 
-class QwenObservation(BaseModel):
-    what: str
-    why_it_matters: str
-    strength: Literal["weak", "moderate", "strong"] = "weak"
+class QwenSignal(BaseModel):
+    type: str
+    severity: Literal["low", "medium", "high"]
+    evidence: str
 
+class QwenResponse(BaseModel):
+    signals: List[QwenSignal] = Field(default_factory=list)
+    confidence: float
+    notes: str
 
-class QwenReasonedAnalysis(BaseModel):
-    reasoning: str = ""
-    observations: List[QwenObservation] = Field(default_factory=list)
-    legitimate_explanations: List[str] = Field(default_factory=list)
-    verdict: Literal["likely_phishing", "suspicious", "likely_legitimate", "insufficient_information"] = "suspicious"
-    what_would_change_my_mind: str = ""
-
+def _validate_qwen_response(structured: QwenResponse, text_content: str) -> bool:
+    if structured.confidence < 0.0 or structured.confidence > 1.0:
+        logger.warning("[qwen_adapter] Invalid confidence value: %s", structured.confidence)
+        return False
+    if len(structured.signals) > 10:
+        logger.warning("[qwen_adapter] Too many signals generated: %d", len(structured.signals))
+        return False
+    for sig in structured.signals:
+        if sig.evidence not in text_content:
+            logger.warning("[qwen_adapter] Hallucinated evidence rejected: '%s'", sig.evidence)
+            return False
+    return True
 
 def _repair_json_structure(candidate: str) -> str:
     """Repair unterminated strings and unclosed braces/brackets in truncated JSON."""
@@ -117,143 +126,41 @@ def _safe_parse_qwen_json(raw: str) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Regex extraction fallback for truncated responses
-    extracted: Dict[str, Any] = {}
-    reasoning_match = re.search(r'"reasoning"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', candidate)
-    if reasoning_match:
-        extracted["reasoning"] = reasoning_match.group(1)
+    # Basic regex extraction fallback for the new schema
+    extracted: Dict[str, Any] = {"signals": [], "confidence": 0.0, "notes": ""}
+    
+    notes_match = re.search(r'"notes"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', candidate)
+    if notes_match:
+        extracted["notes"] = notes_match.group(1)
+        
+    conf_match = re.search(r'"confidence"\s*:\s*([\d\.]+)', candidate)
+    if conf_match:
+        try:
+            extracted["confidence"] = float(conf_match.group(1))
+        except ValueError:
+            pass
 
-    verdict_match = re.search(
-        r'"verdict"\s*:\s*"(likely_phishing|suspicious|likely_legitimate|insufficient_information)"',
-        candidate,
-    )
-    if verdict_match:
-        extracted["verdict"] = verdict_match.group(1)
-
-    change_match = re.search(r'"what_would_change_my_mind"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', candidate)
-    if change_match:
-        extracted["what_would_change_my_mind"] = change_match.group(1)
-
-    obs_matches = re.findall(
-        r'\{\s*"what"\s*:\s*"([^"]+)"\s*,\s*"why_it_matters"\s*:\s*"([^"]+)"(?:\s*,\s*"strength"\s*:\s*"(weak|moderate|strong)")?',
-        candidate,
-    )
-    if obs_matches:
-        extracted["observations"] = [
-            {"what": m[0], "why_it_matters": m[1], "strength": m[2] or "weak"}
-            for m in obs_matches
-        ]
-
-    if extracted.get("verdict") or extracted.get("reasoning") or extracted.get("observations"):
+    # We do not attempt complex regex extraction of signals to avoid false positives.
+    if extracted.get("notes") or extracted.get("confidence") > 0.0:
         return extracted
 
     raise ValueError(f"Could not parse or repair valid JSON: {text[:120]}")
 
 
-
 SYSTEM_PROMPT = """You are a Senior Cybersecurity Threat Intelligence Analyst.
 
-Your core philosophy:
-"/login" exists on every real bank. Sensitive paths (/login, /verify, /kyc, /account/update) are neutral on their own. They only matter if the domain isn't the real bank, or the action was unprompted, or the request asks for something illegitimate.
-Urgency words ("within 24 hours", "immediate action") are neutral on their own unless used to short-circuit a decision involving credentials, secrecy, or unusual payments.
-High-abuse TLDs (.xyz, .top) and shorteners are not standalone proof of maliciousness. Real startups and legit marketing use them.
+Output valid JSON only. No prose. No markdown. No code fences.
+Only use information present in the input. Do not invent domains, IPs, file hashes, or behaviors that are not explicitly in the text.
+If the input does not contain enough information to conclude, return an empty signals array and set confidence to 0.
+Every signal must include an evidence field containing a literal substring copied from the input that supports it.
 
-Before you label anything, reason through these three questions and write the answers in "reasoning":
-
-1. IDENTITY — Does the domain match the brand or person being claimed?
-   If the email/URL says "PayPal" and the domain is not paypal.com, that is a strong signal.
-   If it says "PayPal" and the domain is paypal.com, the identity is clean.
-   Reference Table of Official Domains:
-   - State Bank of India: Official `sbi.bank.in`, Legacy/Valid `sbi.co.in`, `onlinesbi.com`
-   - HDFC Bank: Official `hdfc.bank.in`, Legacy/Valid `hdfcbank.com`
-   - ICICI Bank: Official `icici.bank.in`, Legacy/Valid `icicibank.com`
-   - Axis Bank: Official `axis.bank.in`, Legacy/Valid `axisbank.com`
-   - Punjab National Bank: Official `pnb.bank.in`, Legacy/Valid `pnbindia.in`
-   - Bank of India: Official `bankofindia.bank.in`, Legacy/Valid `bankofindia.co.in`
-   - Indian Bank: Official `indianbank.bank.in`, Legacy/Valid `indianbank.in`
-   - PayPal: `paypal.com`
-   - Chase Bank: `chase.com`
-   - Bank of America: `bankofamerica.com`
-   - Wells Fargo: `wellsfargo.com`
-   - Apple: `apple.com`, `icloud.com`
-   - Microsoft: `microsoft.com`, `live.com`, `office.com`, `outlook.com`
-   - Google: `google.com`, `gmail.com`, `accounts.google.com`
-   - Amazon: `amazon.com`, `aws.amazon.com`
-   - Netflix: `netflix.com`
-
-2. BEHAVIOR — Is the request expected in this context?
-   A bank sending a login link is normal. A bank asking for your PIN or OTP is not.
-   A password reset requested by the user is normal. A password reset unprompted with a 24h deadline is not.
-   An exchange asking for KYC after signup is normal. An exchange asking for KYC on a cold email is not.
-
-3. REQUEST — Is something being asked that a real service would never ask?
-   Passwords, PINs, OTPs, full card numbers, gift cards, crypto, or demands for secrecy ("keep confidential", "do not tell anyone").
-   Real services do not ask for these.
-
-REWRITTEN RULES FOR NOISY CATEGORIES:
-- Sensitive paths (/login, /verify, /kyc, /wallet/connect, /confirm, /account/update):
-  These paths are NEUTRAL. Real banks, wallets, exchanges, and SaaS all use them.
-  Only a signal when combined with an unauthorized lookalike domain or behavior mismatch.
-  Never flag /login on an official domain.
-- Urgency phrases ("within 24 hours", "immediate action", "final notice"):
-  Urgency words are NEUTRAL on their own. Real alerts and renewals use them.
-  Flag only when urgency short-circuits a decision involving credentials, payments, or secrecy.
-  Urgency alone ("sale ends tonight", "trial ending") is NO SIGNAL.
-- High-abuse TLDs (.xyz, .top, .tk, etc.):
-  Overrepresented in phishing but NOT proof. Real startups and dev tools use .xyz and .io.
-  Only treat as a signal when combined with a brand lookalike or a credential/payment ask.
-  A .xyz domain from an actual startup or developer tool with no credential ask is NOT phishing — label "likely_legitimate".
-- Shorteners (bit.ly, tinyurl, t.co):
-  Legitimate marketing uses shorteners. Only a signal if impersonating a bank or asking credentials.
-- Generic greeting ("Dear Customer"):
-  Only a signal if sender claims an established personal banking/account relationship. In cold outreach or newsletters it is normal.
-
-Verdict decision rules:
-- Only when at least TWO of the three questions are problematic should you label "likely_phishing".
-- ONE problematic and two clean = "suspicious", not phishing.
-- All three clean = "likely_legitimate", even if the target uses urgency, a shortener, a .xyz domain, or a /login link.
-- If information needed to evaluate is missing = "insufficient_information".
-
-Do NOT output a confidence number (no floats, no 0.95).
-Do NOT label based on a single keyword.
-Mandatory: Provide "legitimate_explanations" steelmanning a benign reading, and "what_would_change_my_mind".
-
-Worked Reference Example:
-Input:
-From: HDFC Bank <alerts@hdfc-bank-kyc-update.com>
-Subject: Urgent: Complete your KYC within 24 hours
-Body: Dear Customer, your account will be suspended. Verify now: https://hdfc-bank-kyc-update.com/login/verify?customer=827491
-
-Output:
+Output schema EXACTLY:
 {
-  "reasoning": "Checked identity first: email claims HDFC Bank but domain is hdfc-bank-kyc-update.com, not hdfc.bank.in or hdfcbank.com. That is a mismatch. Checked behavior: KYC requests do come from real banks, but on their own domain, and usually after the customer initiates or through the app. Checked request: the email asks the user to verify via a link with an urgency of 24 hours and a suspension threat. The link path /login/verify is normal for a bank site, so the path itself is not the signal. The domain mismatch combined with the urgency is.",
-  "observations": [
-    {
-      "what": "Claimed HDFC Bank, domain is hdfc-bank-kyc-update.com",
-      "why_it_matters": "HDFC's real domains are hdfc.bank.in and hdfcbank.com. The hyphenated variant is an unauthorized lookalike.",
-      "strength": "strong"
-    },
-    {
-      "what": "24-hour deadline and account suspension threat",
-      "why_it_matters": "Used here to short-circuit a decision that involves a login link. Real KYC notices are not typically framed with sudden threats.",
-      "strength": "moderate"
-    },
-    {
-      "what": "Generic greeting 'Dear Customer'",
-      "why_it_matters": "A bank that holds the user's account would typically use their registered name. Weak on its own.",
-      "strength": "weak"
-    },
-    {
-      "what": "Path /login/verify on a bank domain",
-      "why_it_matters": "Normal. Every bank has this. Not a threat signal.",
-      "strength": "weak"
-    }
+  "signals": [
+    {"type": "string", "severity": "low|medium|high", "evidence": "string"}
   ],
-  "legitimate_explanations": [
-    "Real banks do send KYC reminders. If the domain were hdfcbank.com or hdfc.bank.in and the user had an open KYC request, this would be legitimate."
-  ],
-  "verdict": "likely_phishing",
-  "what_would_change_my_mind": "If the sending domain were hdfcbank.com or hdfc.bank.in and the link resolved to the same official domain, this would read as a routine KYC reminder even with the urgency."
+  "confidence": 0.0,
+  "notes": "string"
 }
 """
 
@@ -322,20 +229,7 @@ class QwenAdapter:
             f"DETERMINISTIC HEURISTIC TELEMETRY:\n{json.dumps(deterministic_signals or {}, default=str, indent=2)}\n\n"
             f"SYSTEM 1 LAYA NEURAL CLASSIFIER OUTPUT:\n{json.dumps(laya_signals or {}, default=str, indent=2)}\n\n"
             "Keep observations concise (maximum 3 key observations) and reasoning succinct to ensure complete output.\n"
-            "Respond ONLY with a JSON object matching this schema exactly:\n"
-            "{\n"
-            '  "reasoning": "step-by-step reasoning evaluating identity, behavior, and request",\n'
-            '  "observations": [\n'
-            '    {\n'
-            '      "what": "what was observed",\n'
-            '      "why_it_matters": "why it matters in context",\n'
-            '      "strength": "weak" | "moderate" | "strong"\n'
-            '    }\n'
-            '  ],\n'
-            '  "legitimate_explanations": ["steelmanned benign explanation"],\n'
-            '  "verdict": "likely_phishing" | "suspicious" | "likely_legitimate" | "insufficient_information",\n'
-            '  "what_would_change_my_mind": "what evidence would change the verdict"\n'
-            "}"
+            "Respond ONLY with a JSON object matching the exact schema."
         )
 
         return await self._query_qwen(prompt=user_prompt, tag="QWEN URL", target_label=clean_url)
@@ -370,20 +264,7 @@ class QwenAdapter:
             f"COMMUNICATION CONTENT:\n\"\"\"\n{truncated_text}\n\"\"\"\n"
             f"{hints_str}\n"
             "Keep observations concise (maximum 3 key observations) and reasoning succinct to ensure complete output.\n"
-            "Respond ONLY with a JSON object matching this schema exactly:\n"
-            "{\n"
-            '  "reasoning": "step-by-step reasoning evaluating identity, behavior, and request",\n'
-            '  "observations": [\n'
-            '    {\n'
-            '      "what": "what was observed",\n'
-            '      "why_it_matters": "why it matters in context",\n'
-            '      "strength": "weak" | "moderate" | "strong"\n'
-            '    }\n'
-            '  ],\n'
-            '  "legitimate_explanations": ["steelmanned benign explanation"],\n'
-            '  "verdict": "likely_phishing" | "suspicious" | "likely_legitimate" | "insufficient_information",\n'
-            '  "what_would_change_my_mind": "what evidence would change the verdict"\n'
-            "}"
+            "Respond ONLY with a JSON object matching the exact schema."
         )
 
         return await self._query_qwen(prompt=user_prompt, tag="QWEN CONTENT", target_label=truncated_text[:60])
@@ -432,54 +313,64 @@ class QwenAdapter:
 
             try:
                 parsed_json = _safe_parse_qwen_json(raw_response)
-                structured = QwenReasonedAnalysis.model_validate(parsed_json)
+                structured = QwenResponse.model_validate(parsed_json)
             except Exception as parse_err:
                 logger.warning("[%s] Malformed output: %s (raw: %s)", tag, parse_err, raw_response)
                 return {
-                    "available": False,
+                    "available": True,
+                    "provider_status": "qwen_invalid",
                     "error": f"Malformed model response: {parse_err}",
                     "signals": {},
                     "findings": [],
                 }
 
-            # Map observations into structured findings attached to specific rationale
-            findings: List[Finding] = []
-            for obs in structured.observations:
-                if structured.verdict == "likely_legitimate":
-                    sev = "low"
-                else:
-                    severity_map = {"strong": "high", "moderate": "medium", "weak": "low"}
-                    sev = severity_map.get(obs.strength, "low")
+            if not _validate_qwen_response(structured, prompt):
+                return {
+                    "available": True,
+                    "provider_status": "qwen_invalid",
+                    "error": "Validation failed: Hallucinated evidence or invalid confidence.",
+                    "signals": {},
+                    "findings": [],
+                }
 
+            # Confidence capping
+            if structured.confidence > 0.85 and not any(s.severity == "high" for s in structured.signals):
+                structured.confidence = 0.85
+
+            findings: List[Finding] = []
+            for sig in structured.signals:
                 findings.append(Finding(
-                    severity=sev,
-                    title=obs.what,
-                    description=obs.why_it_matters,
+                    severity=sig.severity,
+                    title=sig.type,
+                    description=sig.evidence,
                     category="qwen_ai",
                 ))
 
-            strong_count = sum(1 for o in structured.observations if o.strength == "strong")
-            moderate_count = sum(1 for o in structured.observations if o.strength == "moderate")
-            weak_count = sum(1 for o in structured.observations if o.strength == "weak")
+            # Simulate verdict for RiskEngine based on new confidence mapping
+            if structured.confidence > 0.85 and any(s.severity == "high" for s in structured.signals):
+                verdict = "likely_phishing"
+            elif structured.confidence > 0.5:
+                verdict = "suspicious"
+            else:
+                verdict = "likely_legitimate"
 
             signals = {
-                "qwen_verdict": structured.verdict,
-                "qwen_is_phishing": structured.verdict == "likely_phishing",
-                "qwen_suspicious": structured.verdict == "suspicious",
-                "qwen_legitimate": structured.verdict == "likely_legitimate",
-                "qwen_strong_observations": strong_count,
-                "qwen_moderate_observations": moderate_count,
-                "qwen_weak_observations": weak_count,
+                "qwen_verdict": verdict,
+                "qwen_is_phishing": verdict == "likely_phishing",
+                "qwen_suspicious": verdict == "suspicious",
+                "qwen_legitimate": verdict == "likely_legitimate",
+                "qwen_confidence": structured.confidence,
+                "qwen_signals_count": len(structured.signals),
             }
 
             return {
                 "available": True,
                 "signals": signals,
-                "verdict": structured.verdict,
-                "reasoning": structured.reasoning,
-                "legitimate_explanations": structured.legitimate_explanations,
-                "what_would_change_my_mind": structured.what_would_change_my_mind,
-                "observations": [o.model_dump() for o in structured.observations],
+                "verdict": verdict,
+                "reasoning": structured.notes,
+                "legitimate_explanations": [],
+                "what_would_change_my_mind": "",
+                "observations": [],
                 "findings": findings,
             }
 
@@ -648,22 +539,20 @@ REPORT_SYSTEM_PROMPT = (
     "Do NOT use emoji.\n"
     "Do NOT use markdown headers (#) or markdown bold (**). Output plain text only.\n"
     "Do NOT output JSON or code fences. Output plain text report only.\n\n"
-    "Your report must contain exactly the following seven numbered section headings in this exact order:\n\n"
+    "Your report must contain exactly the following six numbered section headings in this exact order:\n\n"
     "1. What was analyzed\n"
     "2. Verdict\n"
     "3. Key findings\n"
     "4. Why this verdict\n"
     "5. What was checked\n"
-    "6. What was not checked\n"
-    "7. Recommendation\n\n"
+    "6. Recommendation\n\n"
     "Section rules:\n"
     "- 1. What was analyzed: State the input type and a short factual description of the target. Do not invent details or include secrets.\n"
     "- 2. Verdict: State the classification and score in exactly one line (e.g., 'Verdict: High Risk (Risk Score: 98/100)'). Do not repeat the score anywhere else in the report.\n"
     "- 3. Key findings: Group findings by severity (High, Medium, Low). Explain each key finding in 1-2 plain sentences. If no findings were detected, state that.\n"
     "- 4. Why this verdict: Short reasoning, referencing the strongest signals observed.\n"
     "- 5. What was checked: List the detectors and intelligence providers that actually ran.\n"
-    "- 6. What was not checked: List providers that were unavailable, disabled, or timed out. Do not invent external data.\n"
-    "- 7. Recommendation: One or two calm sentences advising what the user should do.\n\n"
+    "- 6. Recommendation: One or two calm sentences advising what the user should do.\n\n"
     "Keep the total length between 250 and 550 words. Plain text with section labels only."
 )
 
@@ -780,18 +669,14 @@ def build_deterministic_report(
     checked = [f"- {p}" for p in providers_used] if providers_used else ["- Deterministic heuristics engine"]
     sec5 = "5. What was checked\n" + "\n".join(checked)
 
-    # 6. What was not checked
-    not_checked = [f"- {p}" for p in providers_not_used] if providers_not_used else ["- All configured local analysis modules completed."]
-    sec6 = "6. What was not checked\n" + "\n".join(not_checked)
-
-    # 7. Recommendation
+    # 6. Recommendation
     if classification == "High Risk":
         rec = "Do not open, click, or enter any credentials or sensitive information into this target. Treat it as hostile and delete or report it to your security team."
     elif classification == "Suspicious":
         rec = "Exercise caution before taking action or submitting credentials. Verify the sender or domain authenticity through an independent, trusted channel."
     else:
         rec = "The target appears safe for standard use based on local analysis. Standard cybersecurity vigilance is still recommended."
-    sec7 = f"7. Recommendation\n{rec}"
+    sec6 = f"6. Recommendation\n{rec}"
 
-    return f"{sec1}\n\n{sec2}\n\n{sec3}\n\n{sec4}\n\n{sec5}\n\n{sec6}\n\n{sec7}"
+    return f"{sec1}\n\n{sec2}\n\n{sec3}\n\n{sec4}\n\n{sec5}\n\n{sec6}"
 

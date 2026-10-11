@@ -29,8 +29,9 @@ fi
 
 # 3. Check Laya
 echo "[3/5] Checking Laya (ModernBERT-large)..."
-if [ -d "/home/om/laya-test/.venv" ]; then
-    echo "  ✓ Laya environment verified at /home/om/laya-test."
+LAYA_CHECK_PATH="${LAYA_VENV_PATH:-"$HOME/laya-test/.venv"}"
+if [ -d "$LAYA_CHECK_PATH" ] || [ -d "$HOME/.venv-laya" ] || [ -d "$HOME/laya/.venv" ]; then
+    echo "  ✓ Laya environment verified."
 else
     echo "  ⚠️ Laya path not found; using fallback heuristics."
 fi

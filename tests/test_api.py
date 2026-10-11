@@ -176,9 +176,7 @@ def test_scan_report_download_and_preview():
         "Clean identity and verified behavior.\n\n"
         "5. What was checked\n"
         "- Deterministic heuristics\n\n"
-        "6. What was not checked\n"
-        "- None\n\n"
-        "7. Recommendation\n"
+        "6. Recommendation\n"
         "Safe to use."
     )
     scan = Scan(

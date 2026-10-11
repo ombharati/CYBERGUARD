@@ -50,22 +50,11 @@ async def test_qwen_adapter_structured_parsing():
     mock_json_response = {
         "response": (
             '{\n'
-            '  "reasoning": "Checked identity: claims Security Dept but sender is untrusted. Behavior: asks user to click and verify password urgently. Request: asking for password is an illegitimate request.",\n'
-            '  "observations": [\n'
-            '    {\n'
-            '      "what": "Solicitation of account password",\n'
-            '      "why_it_matters": "Real services never solicit user passwords directly.",\n'
-            '      "strength": "strong"\n'
-            '    },\n'
-            '    {\n'
-            '      "what": "High urgency language",\n'
-            '      "why_it_matters": "Pressures victim to bypass standard safety precautions.",\n'
-            '      "strength": "moderate"\n'
-            '    }\n'
+            '  "signals": [\n'
+            '    {"type": "Password solicitation", "severity": "high", "evidence": "verify your account password"}\n'
             '  ],\n'
-            '  "legitimate_explanations": ["None found for password solicitation."],\n'
-            '  "verdict": "likely_phishing",\n'
-            '  "what_would_change_my_mind": "If verified this is internal security team test."\n'
+            '  "confidence": 0.90,\n'
+            '  "notes": "Asking for password is an illegitimate request."\n'
             '}'
         )
     }
@@ -77,12 +66,11 @@ async def test_qwen_adapter_structured_parsing():
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
         result = await adapter.analyze_content("Please verify your account password immediately.")
         assert result["available"] is True
+        assert result.get("provider_status") != "qwen_invalid"
         assert result["signals"]["qwen_is_phishing"] is True
         assert result["signals"]["qwen_verdict"] == "likely_phishing"
-        assert result["signals"]["qwen_strong_observations"] >= 1
-        assert len(result["findings"]) == 2
-        assert any("password" in f.title.lower() for f in result["findings"])
-
+        assert len(result["findings"]) == 1
+        assert "Password solicitation" in result["findings"][0].title
 
 @pytest.mark.asyncio
 async def test_qwen_adapter_malformed_output():
@@ -93,9 +81,8 @@ async def test_qwen_adapter_malformed_output():
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
         result = await adapter.analyze_content("Hello")
-        assert result["available"] is False
+        assert result["provider_status"] == "qwen_invalid"
         assert "Malformed model response" in result["error"]
-
 
 @pytest.mark.asyncio
 async def test_qwen_adapter_analyze_url_phishing():
@@ -103,22 +90,11 @@ async def test_qwen_adapter_analyze_url_phishing():
     mock_json_response = {
         "response": (
             '{\n'
-            '  "reasoning": "Identity mismatch: URL uses chase-security-update-verify.com rather than official chase.com. Sensitive path /login on an unauthorized lookalike domain indicates high risk credential harvesting.",\n'
-            '  "observations": [\n'
-            '    {\n'
-            '      "what": "Unauthorized lookalike domain targeting Chase",\n'
-            '      "why_it_matters": "Official brand domain is chase.com.",\n'
-            '      "strength": "strong"\n'
-            '    },\n'
-            '    {\n'
-            '      "what": "Credential harvesting /login endpoint on untrusted domain",\n'
-            '      "why_it_matters": "Neutral on official domain, but on lookalike domain indicates credential theft.",\n'
-            '      "strength": "strong"\n'
-            '    }\n'
+            '  "signals": [\n'
+            '    {"type": "Unauthorized lookalike", "severity": "high", "evidence": "chase-security"}\n'
             '  ],\n'
-            '  "legitimate_explanations": ["None found. Legitimate Chase login requires chase.com."],\n'
-            '  "verdict": "likely_phishing",\n'
-            '  "what_would_change_my_mind": "If the domain resolves to official chase.com."\n'
+            '  "confidence": 0.95,\n'
+            '  "notes": "Identity mismatch."\n'
             '}'
         )
     }
@@ -134,11 +110,62 @@ async def test_qwen_adapter_analyze_url_phishing():
             laya_signals={"laya_phishing_probability": 0.95},
         )
         assert result["available"] is True
+        assert result.get("provider_status") != "qwen_invalid"
         assert result["signals"]["qwen_is_phishing"] is True
         assert result["signals"]["qwen_verdict"] == "likely_phishing"
-        assert result["signals"]["qwen_strong_observations"] == 2
-        assert len(result["findings"]) == 2
-        assert any("lookalike domain" in f.title.lower() for f in result["findings"])
+        assert len(result["findings"]) == 1
+
+@pytest.mark.asyncio
+async def test_qwen_adapter_hallucinated_evidence():
+    adapter = QwenAdapter()
+    mock_json_response = {
+        "response": (
+            '{\n'
+            '  "signals": [\n'
+            '    {"type": "Fake Signal", "severity": "high", "evidence": "something totally made up"}\n'
+            '  ],\n'
+            '  "confidence": 0.95,\n'
+            '  "notes": "Invented stuff."\n'
+            '}'
+        )
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = mock_json_response
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
+        result = await adapter.analyze_content("Just a normal message.")
+        assert result["provider_status"] == "qwen_invalid"
+        assert "Validation failed" in result["error"]
+        assert len(result["findings"]) == 0
+
+@pytest.mark.asyncio
+async def test_qwen_adapter_confidence_clamping():
+    adapter = QwenAdapter()
+    mock_json_response = {
+        "response": (
+            '{\n'
+            '  "signals": [\n'
+            '    {"type": "Minor issue", "severity": "low", "evidence": "normal"}\n'
+            '  ],\n'
+            '  "confidence": 0.99,\n'
+            '  "notes": "High confidence but no high severity signals."\n'
+            '}'
+        )
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = mock_json_response
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
+        result = await adapter.analyze_content("Just a normal message.")
+        assert result["available"] is True
+        assert result.get("provider_status") != "qwen_invalid"
+        # Confidence should be clamped to 0.85
+        assert result["signals"]["qwen_confidence"] == 0.85
+        assert result["signals"]["qwen_verdict"] == "suspicious" # >0.5
 
 
 @pytest.mark.asyncio
@@ -160,10 +187,7 @@ async def test_qwen_generate_narrative_report_success():
         "- Deterministic URL Heuristics Detector\n"
         "- Laya Neural Decision Engine (CPU)\n"
         "- Qwen Semantic Threat Reasoner (GPU)\n\n"
-        "6. What was not checked\n"
-        "- External Threat Intel (VirusTotal / URLScan: disabled in local mode)\n"
-        "- WHOIS Registration Records (not configured)\n\n"
-        "7. Recommendation\n"
+        "6. Recommendation\n"
         "Do not click, open, or provide account credentials to this link. Delete and report it immediately."
     )
     mock_resp = MagicMock()
@@ -185,7 +209,7 @@ async def test_qwen_generate_narrative_report_success():
             assert "1. What was analyzed" in res["report_text"]
             assert "2. Verdict" in res["report_text"]
             assert "98/100" in res["report_text"]
-            assert "7. Recommendation" in res["report_text"]
+            assert "6. Recommendation" in res["report_text"]
             assert "**" not in res["report_text"]
             assert "#" not in res["report_text"]
 
@@ -210,8 +234,7 @@ async def test_qwen_generate_narrative_report_fallback_when_unavailable():
         assert "3. Key findings" in res["report_text"]
         assert "4. Why this verdict" in res["report_text"]
         assert "5. What was checked" in res["report_text"]
-        assert "6. What was not checked" in res["report_text"]
-        assert "7. Recommendation" in res["report_text"]
+        assert "6. Recommendation" in res["report_text"]
 
 
 def test_laya_adapter_timeout_handling():
