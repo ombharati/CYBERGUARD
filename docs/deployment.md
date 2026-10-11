@@ -35,7 +35,7 @@ This is the fastest method to turn your machine into a live server accessible fr
 ### Behind the Scenes:
 1. Checks for `cyberguard-postgres` and `cyberguard-redis` Docker containers and starts them.
 2. Verifies Ollama is listening at `http://localhost:11434` with model `qwen3:8b`.
-3. Verifies the local Laya environment in `/home/om/laya-test`.
+3. Verifies the local Laya environment (via `LAYA_VENV_PATH` or `~/laya-test/.venv`).
 4. Starts the FastAPI server (`0.0.0.0:8000`) and the background queue worker.
 5. Launches a Cloudflare Tunnel container that creates an instant, secure public HTTPS subdomain (e.g. `https://*.trycloudflare.com`).
 

@@ -67,7 +67,7 @@ CYBERGUARD/
 
 ## 3. Testing Strategy
 
-CYBERGUARD maintains a comprehensive **45-test** suite designed to run quickly without mandatory network or GPU access during CI:
+CYBERGUARD maintains an automated 90+ test suite designed to run quickly without mandatory network or GPU access during CI:
 
 ### Running Fast Deterministic Unit Tests (~4 seconds)
 These tests mock AI models and verify URL parsing, SSRF subnets, email heuristics, risk scoring math, and API route validation:
