@@ -83,7 +83,7 @@ async def add_security_headers(request, call_next):
         )
     else:
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *;"
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src *;"
         )
     return response
 
@@ -106,6 +106,12 @@ async def health_check():
         ollama=ollama_ok,
         laya_available=laya_ok,
     )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    from fastapi.responses import Response
+    return Response(status_code=204)
 
 
 # API Routers
